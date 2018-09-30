@@ -1,2 +1,2 @@
 # evolutionary-pt
-Evolutionary Parallel Tempering for Bayesian Neural Learning 
+Evolutionary Parallel Tempering for Bayesian Neural Learning.
