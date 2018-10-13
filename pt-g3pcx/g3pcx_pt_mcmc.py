@@ -381,7 +381,7 @@ class Replica(G3PCX, multiprocessing.Process):
 
     def initialize_sampling_parameters(self):
         self.eta_stepsize = 0.02
-        self.sigma_squared = 25
+        self.sigma_squared = 36
         self.nu_1 = 0
         self.nu_2 = 0
         self.start_time = time.time()
@@ -472,7 +472,7 @@ class Replica(G3PCX, multiprocessing.Process):
         prior_proposal = self.prior_function(weights_proposal, tau_proposal)
         difference_likelihood = likelihood_proposal - likelihood_current
         difference_prior = prior_proposal - prior_current
-        mh_ratio = min(1, np.exp(min(709, difference_likelihood + difference_prior)))
+        mh_ratio = min(1, np.exp(min(709, difference_likelihood)))
         u = np.random.uniform(0,1)
         if u < mh_ratio:
             accept = True
@@ -564,6 +564,8 @@ class Replica(G3PCX, multiprocessing.Process):
                         result =  self.parameter_queue.get()
                         #print(self.temperature, w, 'param after swap')
                         weights_current = result[0:self.w_size]
+                        self.population[self.best_index] = weights_current
+                        self.fitness[self.best_index] = self.fitness_function(weights_current)
                         eta = result[self.w_size]
                         likelihood = result[self.w_size+1]
                     except:
@@ -571,7 +573,7 @@ class Replica(G3PCX, multiprocessing.Process):
 
             elapsed_time = ":".join(Replica.convert_time(time.time() - self.start_time))
 
-            print("Sample: {}, Best Fitness: {}, Proposal: {}, Time Elapsed: {}".format(sample, rmse_train_current, rmse_train, elapsed_time))
+            print("Temperature: {} Sample: {}, Best Fitness: {}, Proposal: {}, Time Elapsed: {}".format(self.temperature, sample, rmse_train_current, rmse_train, elapsed_time))
 
         elapsed_time = time.time() - self.start_time
         accept_ratio = num_accept/num_samples
@@ -721,6 +723,7 @@ class EvolutionaryParallelTempering(object):
             self.chains.append(Replica(self.num_samples, self.burn_in, self.population_size, self.topology, self.train_data, self.test_data, self.path, self.temperatures[chain], self.swap_interval, self.parameter_queue[chain], self.wait_chain[chain], self.event[chain]))
 
     def swap_procedure(self, parameter_queue_1, parameter_queue_2):
+        print("Swapped")
         if parameter_queue_2.empty() is False and parameter_queue_1.empty() is False:
             param_1 = parameter_queue_1.get()
             param_2 = parameter_queue_2.get()
@@ -832,7 +835,7 @@ class EvolutionaryParallelTempering(object):
                 self.wait_chain[index].wait()
                 #print(chain_num)
             for index in range(0,self.num_chains-1):
-                #print('starting swap')
+                print('starting swap')
                 self.chain_queue.put(self.swap_procedure(self.parameter_queue[index],self.parameter_queue[index+1]))
                 while True:
                     if self.chain_queue.empty():
@@ -909,8 +912,8 @@ def make_directory(path):
         os.makedirs(path)
 
 if __name__ == '__main__':
-    num_samples = 10000
-    swap_ratio = 2.0
+    num_samples = 100000
+    swap_ratio = 0.1
     population_size = 100
     burn_in = 0.2
     num_chains = 10
