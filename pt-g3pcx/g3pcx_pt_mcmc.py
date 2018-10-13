@@ -349,17 +349,17 @@ class G3PCX(object):
         print self.fitness[self.best_index], ' fitness'
 
 class Replica(G3PCX, multiprocessing.Process):
-    def __init__(self, num_samples, burn_in, population_size, topology, train_data, test_data, directory, problem_type='regression', max_limit=(-5), min_limit=5, temperature, swap_interval, parameter_queue, main_process, event):
+    def __init__(self, num_samples, burn_in, population_size, topology, train_data, test_data, directory, temperature, swap_interval, parameter_queue, main_process, event, problem_type='regression', max_limit=(-5), min_limit=5):
         # MULTIPROCESSING CLASS CONSTRUCTOR
         multiprocessing.Process.__init__(self)
         self.process_id = temperature
-		self.parameter_queue = parameter_queue
-		self.signal_main = main_process
-		self.event =  event
-		#PARALLEL TEMPERING VARIABLES
-		self.temperature = temperature
-		self.swap_interval = swap_interval
-		self.burn_in = burn_in
+        self.parameter_queue = parameter_queue
+        self.signal_main = main_process
+        self.event =  event
+        #PARALLEL TEMPERING VARIABLES
+        self.temperature = temperature
+        self.swap_interval = swap_interval
+        self.burn_in = burn_in
         # MCMC VARIABLES
         self.num_samples = num_samples
         self.topology = topology
@@ -384,7 +384,7 @@ class Replica(G3PCX, multiprocessing.Process):
         self.sigma_squared = 25
         self.nu_1 = 0
         self.nu_2 = 0
-        self.start = time.time()
+        self.start_time = time.time()
 
     @staticmethod
     def convert_time(secs):
@@ -440,7 +440,7 @@ class Replica(G3PCX, multiprocessing.Process):
     def gaussian_likelihood(neural_network, data, weights, tausq):
         desired = data[:, neural_network.topology[0]: neural_network.topology[0] + neural_network.topology[2]]
         prediction = neural_network.generate_output(data, weights)
-        rmse = MCMC.calculate_rmse(prediction, desired)
+        rmse = Replica.calculate_rmse(prediction, desired)
         loss = -0.5 * np.log(2 * np.pi * tausq) - 0.5 * np.square(desired - prediction) / tausq
         return [np.sum(loss), rmse]
 
@@ -553,7 +553,7 @@ class Replica(G3PCX, multiprocessing.Process):
 
             #SWAPPING PREP
             if (i%self.swap_interval == 0):
-                param = np.concatenate([w, np.asarray([eta]).reshape(1), np.asarray([likelihood]),np.asarray([self.temperature])])
+                param = np.concatenate([weights_current, np.asarray([eta]).reshape(1), np.asarray([likelihood]),np.asarray([self.temperature])])
                 self.parameter_queue.put(param)
                 self.signal_main.set()
                 self.event.wait()
@@ -563,17 +563,17 @@ class Replica(G3PCX, multiprocessing.Process):
                     try:
                         result =  self.parameter_queue.get()
                         #print(self.temperature, w, 'param after swap')
-                        w= result[0:w.size]
-                        eta = result[w.size]
-                        likelihood = result[w.size+1]
+                        weights_current = result[0:self.w_size]
+                        eta = result[self.w_size]
+                        likelihood = result[self.w_size+1]
                     except:
                         print ('error')
 
-            elapsed_time = ":".join(MCMC.convert_time(time.time() - self.start))
+            elapsed_time = ":".join(Replica.convert_time(time.time() - self.start_time))
 
             print("Sample: {}, Best Fitness: {}, Proposal: {}, Time Elapsed: {}".format(sample, rmse_train_current, rmse_train, elapsed_time))
 
-        elapsed_time = time.time() - self.start
+        elapsed_time = time.time() - self.start_time
         accept_ratio = num_accept/num_samples
 
         # Close the files
@@ -582,21 +582,352 @@ class Replica(G3PCX, multiprocessing.Process):
 
         return accept_ratio
 
+class EvolutionaryParallelTempering(object):
 
+    def __init__(self, burn_in, train_data, test_data, topology, num_chains, max_temp, num_samples, swap_interval, path, population_size, problem_type='regression', geometric=True):
+        #FNN Chain variables
+        self.train_data = train_data
+        self.test_data = test_data
+        self.topology = topology
+        self.num_param = (topology[0] * topology[1]) + (topology[1] * topology[2]) + topology[1] + topology[2]
+        #Parallel Tempering variables
+        self.burn_in = burn_in
+        self.swap_interval = swap_interval
+        self.path = path
+        self.max_temp = max_temp
+        self.num_swap = 0
+        self.total_swap_proposals = 0
+        self.num_chains = num_chains
+        self.chains = []
+        self.temperatures = []
+        self.num_samples = int(num_samples/self.num_chains)
+        self.geometric = geometric
+        self.population_size = population_size
+        # create queues for transfer of parameters between process chain
+        self.parameter_queue = [multiprocessing.Queue() for i in range(num_chains)]
+        self.chain_queue = multiprocessing.JoinableQueue()
+        self.wait_chain = [multiprocessing.Event() for i in range (self.num_chains)]
+        self.event = [multiprocessing.Event() for i in range (self.num_chains)]
+        make_directory(path)
+
+    def default_beta_ladder(self, ndim, ntemps, Tmax): #https://github.com/konqr/ptemcee/blob/master/ptemcee/sampler.py
+        """
+        Returns a ladder of :math:`\beta \equiv 1/T` under a geometric spacing that is determined by the
+        arguments ``ntemps`` and ``Tmax``.  The temperature selection algorithm works as follows:
+        Ideally, ``Tmax`` should be specified such that the tempered posterior looks like the prior at
+        this temperature.  If using adaptive parallel tempering, per `arXiv:1501.05823
+        <http://arxiv.org/abs/1501.05823>`_, choosing ``Tmax = inf`` is a safe bet, so long as
+        ``ntemps`` is also specified.
+        :param ndim:
+            The number of dimensions in the parameter space.
+        :param ntemps: (optional)
+            If set, the number of temperatures to generate.
+        :param Tmax: (optional)
+            If set, the maximum temperature for the ladder.
+        Temperatures are chosen according to the following algorithm:
+        * If neither ``ntemps`` nor ``Tmax`` is specified, raise an exception (insufficient
+          information).
+        * If ``ntemps`` is specified but not ``Tmax``, return a ladder spaced so that a Gaussian
+          posterior would have a 25% temperature swap acceptance ratio.
+        * If ``Tmax`` is specified but not ``ntemps``:
+          * If ``Tmax = inf``, raise an exception (insufficient information).
+          * Else, space chains geometrically as above (for 25% acceptance) until ``Tmax`` is reached.
+        * If ``Tmax`` and ``ntemps`` are specified:
+          * If ``Tmax = inf``, place one chain at ``inf`` and ``ntemps-1`` in a 25% geometric spacing.
+          * Else, use the unique geometric spacing defined by ``ntemps`` and ``Tmax``.
+        """
+
+        if type(ndim) != int or ndim < 1:
+            raise ValueError('Invalid number of dimensions specified.')
+        if ntemps is None and Tmax is None:
+            raise ValueError('Must specify one of ``ntemps`` and ``Tmax``.')
+        if Tmax is not None and Tmax <= 1:
+            raise ValueError('``Tmax`` must be greater than 1.')
+        if ntemps is not None and (type(ntemps) != int or ntemps < 1):
+            raise ValueError('Invalid number of temperatures specified.')
+
+        tstep = np.array([25.2741, 7., 4.47502, 3.5236, 3.0232,
+                          2.71225, 2.49879, 2.34226, 2.22198, 2.12628,
+                          2.04807, 1.98276, 1.92728, 1.87946, 1.83774,
+                          1.80096, 1.76826, 1.73895, 1.7125, 1.68849,
+                          1.66657, 1.64647, 1.62795, 1.61083, 1.59494,
+                          1.58014, 1.56632, 1.55338, 1.54123, 1.5298,
+                          1.51901, 1.50881, 1.49916, 1.49, 1.4813,
+                          1.47302, 1.46512, 1.45759, 1.45039, 1.4435,
+                          1.4369, 1.43056, 1.42448, 1.41864, 1.41302,
+                          1.40761, 1.40239, 1.39736, 1.3925, 1.38781,
+                          1.38327, 1.37888, 1.37463, 1.37051, 1.36652,
+                          1.36265, 1.35889, 1.35524, 1.3517, 1.34825,
+                          1.3449, 1.34164, 1.33847, 1.33538, 1.33236,
+                          1.32943, 1.32656, 1.32377, 1.32104, 1.31838,
+                          1.31578, 1.31325, 1.31076, 1.30834, 1.30596,
+                          1.30364, 1.30137, 1.29915, 1.29697, 1.29484,
+                          1.29275, 1.29071, 1.2887, 1.28673, 1.2848,
+                          1.28291, 1.28106, 1.27923, 1.27745, 1.27569,
+                          1.27397, 1.27227, 1.27061, 1.26898, 1.26737,
+                          1.26579, 1.26424, 1.26271, 1.26121,
+                          1.25973])
+
+        if ndim > tstep.shape[0]:
+            # An approximation to the temperature step at large
+            # dimension
+            tstep = 1.0 + 2.0*np.sqrt(np.log(4.0))/np.sqrt(ndim)
+        else:
+            tstep = tstep[ndim-1]
+
+        appendInf = False
+        if Tmax == np.inf:
+            appendInf = True
+            Tmax = None
+            ntemps = ntemps - 1
+
+        if ntemps is not None:
+            if Tmax is None:
+                # Determine Tmax from ntemps.
+                Tmax = tstep ** (ntemps - 1)
+        else:
+            if Tmax is None:
+                raise ValueError('Must specify at least one of ``ntemps'' and '
+                                 'finite ``Tmax``.')
+
+            # Determine ntemps from Tmax.
+            ntemps = int(np.log(Tmax) / np.log(tstep) + 2)
+
+        betas = np.logspace(0, -np.log10(Tmax), ntemps)
+        if appendInf:
+            # Use a geometric spacing, but replace the top-most temperature with
+            # infinity.
+            betas = np.concatenate((betas, [0]))
+
+        return betas
+
+    def assign_temperatures(self):
+        #Geometric Spacing
+        if self.geometric is True:
+            betas = self.default_beta_ladder(2, ntemps=self.num_chains, Tmax=self.max_temp)
+            self.temperatures = [np.inf if beta == 0 else 1.0/beta for beta in betas]
+        #Linear Spacing
+        else:
+            temp = 2
+            for i in range(0,self.num_chains):
+                self.temperatures.append(temp)
+                temp += 2.5 #(self.maxtemp/self.num_chains)
+                print (self.temperatures[i])
+
+    def initialize_chains(self):
+        self.assign_temperatures()
+        weights = np.random.randn(self.num_param)
+        for chain in range(0, self.num_chains):
+            self.chains.append(Replica(self.num_samples, self.burn_in, self.population_size, self.topology, self.train_data, self.test_data, self.path, self.temperatures[chain], self.swap_interval, self.parameter_queue[chain], self.wait_chain[chain], self.event[chain]))
+
+    def swap_procedure(self, parameter_queue_1, parameter_queue_2):
+        if parameter_queue_2.empty() is False and parameter_queue_1.empty() is False:
+            param_1 = parameter_queue_1.get()
+            param_2 = parameter_queue_2.get()
+            w_1 = param_1[0:self.num_param]
+            eta_1 = param_1[self.num_param]
+            likelihood_1 = param_1[self.num_param+1]
+            T_1 = param_1[self.num_param+2]
+            w_2 = param_2[0:self.num_param]
+            eta_2 = param_2[self.num_param]
+            likelihood_2 = param_2[self.num_param+1]
+            T_2 = param_2[self.num_param+2]
+            #SWAPPING PROBABILITIES
+            try:
+                swap_proposal =  min(1,0.5*np.exp(likelihood_2 - likelihood_1))
+            except OverflowError:
+                swap_proposal = 1
+            u = np.random.uniform(0,1)
+            if u < swap_proposal:
+                self.total_swap_proposals += 1
+                self.num_swap += 1
+                param_temp =  param1
+                param_1 = param_2
+                param_2 = param_temp
+            return param_1, param_2
+        else:
+            self.total_swap_proposals += 1
+            return
+
+    def plot_figure(self, list, title):
+
+        list_points =  list
+
+        fname = self.path
+        width = 9
+
+        font = 9
+
+        fig = plt.figure(figsize=(10, 12))
+        ax = fig.add_subplot(111)
+
+
+        slen = np.arange(0,len(list),1)
+
+        fig = plt.figure(figsize=(10,12))
+        ax = fig.add_subplot(111)
+        ax.spines['top'].set_color('none')
+        ax.spines['bottom'].set_color('none')
+        ax.spines['left'].set_color('none')
+        ax.spines['right'].set_color('none')
+        ax.tick_params(labelcolor='w', top='off', bottom='off', left='off', right='off')
+        ax.set_title(' Posterior distribution', fontsize=  font+2)#, y=1.02)
+
+        ax1 = fig.add_subplot(211)
+
+        n, rainbins, patches = ax1.hist(list_points,  bins = 20,  alpha=0.5, facecolor='sandybrown', density=False)
+
+
+        color = ['blue','red', 'pink', 'green', 'purple', 'cyan', 'orange','olive', 'brown', 'black']
+
+        ax1.grid(True)
+        ax1.set_ylabel('Frequency',size= font+1)
+        ax1.set_xlabel('Parameter values', size= font+1)
+
+        ax2 = fig.add_subplot(212)
+
+        list_points = np.asarray(np.split(list_points,  self.num_chains ))
+
+
+
+
+        ax2.set_facecolor('#f2f2f3')
+        ax2.plot( list_points.T , label=None)
+        ax2.set_title(r'Trace plot',size= font+2)
+        ax2.set_xlabel('Samples',size= font+1)
+        ax2.set_ylabel('Parameter values', size= font+1)
+
+        fig.tight_layout()
+        fig.subplots_adjust(top=0.88)
+
+
+        plt.savefig(fname + '/' + title  + '_pos_.png', bbox_inches='tight', dpi=300, transparent=False)
+        plt.clf()
+
+
+    def run_chains(self):
+        x_test = np.linspace(0,1,num=self.test_data.shape[0])
+        x_train = np.linspace(0,1,num=self.train_data.shape[0])
+        # only adjacent chains can be swapped therefore, the number of proposals is ONE less num_chains
+        swap_proposal = np.ones(self.num_chains-1)
+        # create parameter holders for paramaters that will be swapped
+        replica_param = np.zeros((self.num_chains, self.num_param))
+        likelihood = np.zeros(self.num_chains)
+        eta = np.zeros(self.num_chains)
+        # Define the starting and ending of MCMC Chains
+        start = 0
+        end = self.num_samples-1
+        number_exchange = np.zeros(self.num_chains)
+        filen = open(self.path + '/num_exchange.txt', 'a')
+        #RUN MCMC CHAINS
+        for index in range(0,self.num_chains):
+            self.chains[index].start_chain = start
+            self.chains[index].end = end
+
+        for index in range(0,self.num_chains):
+            self.chains[index].start()
+        #SWAP PROCEDURE
+        while True:
+            for index in range(0,self.num_chains):
+                self.wait_chain[index].wait()
+                #print(chain_num)
+            for index in range(0,self.num_chains-1):
+                #print('starting swap')
+                self.chain_queue.put(self.swap_procedure(self.parameter_queue[index],self.parameter_queue[index+1]))
+                while True:
+                    if self.chain_queue.empty():
+                        self.chain_queue.task_done()
+                        #print(k,'EMPTY QUEUE')
+                        break
+                    swap_process = self.chain_queue.get()
+                    #print(swap_process)
+                    if swap_process is None:
+                        self.chain_queue.task_done()
+                        #print(k,'No Process')
+                        break
+                    param_1, param_2 = swap_process
+
+                    self.parameter_queue[index].put(param_1)
+                    self.parameter_queue[index+1].put(param_2)
+            for index in range (self.num_chains):
+                    self.event[index].set()
+            count = 0
+            for index in range(self.num_chains):
+                if self.chains[index].is_alive() is False:
+                    count+=1
+            if count == self.num_chains:
+                break
+
+
+        #JOIN THEM TO MAIN PROCESS
+        for index in range(0,self.num_chains):
+            self.chains[index].join()
+        self.chain_queue.join()
+        #GETTING DATA
+        burn_in = int(self.num_samples*self.burn_in)
+        pos_w = np.zeros((self.num_chains,self.num_samples - burn_in, self.num_param))
+        fx_train_samples = np.zeros((self.num_chains,self.num_samples - burn_in, self.train_data.shape[0]))
+        rmse_train = np.zeros((self.num_chains,self.num_samples - burn_in))
+        fx_test_samples = np.zeros((self.num_chains,self.num_samples - burn_in, self.test_data.shape[0]))
+        rmse_test = np.zeros((self.num_chains,self.num_samples - burn_in))
+        accept_ratio = np.zeros((self.num_chains,1))
+
+        for i in range(self.num_chains):
+            file_name = self.path+'/posterior/pos_w_chain_'+ str(self.temperatures[i])+ '.txt'
+            dat = np.loadtxt(file_name)
+            pos_w[i,:,:] = dat[burn_in:,:]
+            file_name = self.path+'/posterior/fxtrain_samples_chain_'+ str(self.temperatures[i])+ '.txt'
+            dat = np.loadtxt(file_name)
+            fxtrain_samples[i,:,:] = dat[burn_in:,:]
+            file_name = self.path+'/posterior/fxtest_samples_chain_'+ str(self.temperatures[i])+ '.txt'
+            dat = np.loadtxt(file_name)
+            fx_test_samples[i,:,:] = dat[burn_in:,:]
+            file_name = self.path+'/posterior/rmse_test_chain_'+ str(self.temperatures[i])+ '.txt'
+            dat = np.loadtxt(file_name)
+            rmse_test[i,:] = dat[burn_in:]
+            file_name = self.path+'/posterior/rmse_train_chain_'+ str(self.temperatures[i])+ '.txt'
+            dat = np.loadtxt(file_name)
+            rmse_train[i,:] = dat[burn_in:]
+            file_name = self.path + '/posterior/accept_list_chain_' + str(self.temperatures[i]) + '_accept.txt'
+            dat = np.loadtxt(file_name)
+            accept_ratio[i,:] = dat
+
+        pos_w = pos_w.transpose(2,0,1).reshape(self.num_param,-1)
+        accept_total = np.sum(accept_ratio)/self.num_chains
+        fx_train = fxtrain_samples.reshape(self.num_chains*(self.num_samples - burn_in), self.train_data.shape[0])
+        rmse_train = rmse_train.reshape(self.num_chains*(self.num_samples - burn_in), 1)
+        fx_test = fxtest_samples.reshape(self.num_chains*(self.NumSamples - burn_in), self.testdata.shape[0])
+        rmse_test = rmse_test.reshape(self.num_chains*(self.NumSamples - burn_in), 1)
+        for s in range(self.num_param):
+            self.plot_figure(pos_w[s,:], 'pos_distri_'+str(s))
+        print("NUMBER OF SWAPS =", self.num_swap)
+        print("SWAP ACCEPTANCE = ", self.num_swap*100/self.total_swap_proposals," %")
+        return (pos_w, fx_train, fx_test, x_train, x_test, rmse_train, rmse_test, accept_total)
+
+def make_directory(path):
+    if not os.path.isdir(path):
+        os.makedirs(path)
 
 if __name__ == '__main__':
     num_samples = 10000
+    swap_ratio = 2.0
     population_size = 100
+    burn_in = 0.2
+    num_chains = 10
+    max_temp = 20
+    swap_interval = swap_ratio * num_samples
     problem_type = 'regression'
     topology = [4, 25, 1]
     problem_name = 'synthetic'
+    path = 'results/synthetic'
 
-    train_data_file = 'synthetic_data/target_train.csv'
-    test_data_file = 'synthetic_data/target_test.csv'
+    train_data_file = '../synthetic_data/target_train.csv'
+    test_data_file = '../synthetic_data/target_test.csv'
 
     train_data = np.genfromtxt(train_data_file, delimiter=',')
     test_data = np.genfromtxt(test_data_file, delimiter=',')
 
-    model = MCMC(num_samples, population_size, topology, train_data, test_data, directory=problem_name)
-    accept_ratio = model.mcmc_sampler()
-    print("accept ratio: {}".format(accept_ratio))
+    model = EvolutionaryParallelTempering(burn_in, train_data, test_data, topology, num_chains, max_temp, num_samples, swap_interval, path, population_size, problem_type='regression')
+    model.initialize_chains()
+    accept_ratio = model.run_chains()
+    print("accept ratio: {}".format(accept_ratio[-1]))
