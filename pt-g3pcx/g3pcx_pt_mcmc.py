@@ -138,14 +138,14 @@ class G3PCX(object):
         self.problem = 1
 
     def fitness_function(self, x):    #  function  (can be any other function, model or even a neural network)
-		fit = 0.0
-		if self.problem == 1: # rosenbrock
-			for j in range(x.size -1):
-				fit += (100.0*(x[j]*x[j] - x[j+1])*(x[j]*x[j] - x[j+1]) + (x[j]-1.0)*(x[j]-1.0))
-		elif self.problem ==2:  # ellipsoidal - sphere function
-			for j in range(x.size):
-				fit = fit + ((j+1)*(x[j]*x[j]))
-		return fit # note we will maximize fitness, hence minimize error
+        fit = 0.0
+        if self.problem == 1: # rosenbrock
+            for j in range(x.size -1):
+                fit += (100.0*(x[j]*x[j] - x[j+1])*(x[j]*x[j] - x[j+1]) + (x[j]-1.0)*(x[j]-1.0))
+        elif self.problem ==2:  # ellipsoidal - sphere function
+            for j in range(x.size):
+                fit = fit + ((j+1)*(x[j]*x[j]))
+        return fit # note we will maximize fitness, hence minimize error
 
     def initialize_parameters(self):
         self.epsilon = 1e-40  # convergence
@@ -215,17 +215,17 @@ class G3PCX(object):
                     d[i]= centroid[i]  - self.population[self.temp_index[0],i]
                 diff[j, i] = self.population[self.temp_index[j], i] - self.population[self.temp_index[0],i]
             if (self.mod(diff[j,:]) < self.epsilon):
-                print 'Points are very close to each other. Quitting this run'
+                print('Points are very close to each other. Quitting this run')
                 return 0
         dist = self.mod(d)
         if (dist < self.epsilon):
-            print " Error -  points are very close to each other. Quitting this run   "
+            print ("\nError -  points are very close to each other. Quitting this run\n")
             return 0
         # orthogonal directions are computed
         for j in range(1, self.num_parents):
             temp1 = self.inner(diff[j,:] , d )
             if ((self.mod(diff[j,:]) * dist) == 0):
-                print "Division by zero"
+                print("Division by zero")
                 temp2 = temp1 / (1)
             else:
                 temp2 = temp1 / (self.mod(diff[j,:]) * dist)
@@ -241,10 +241,10 @@ class G3PCX(object):
             tempar1[i] = self.rand_normal(0,  self.sigma_eta * D_not) #rand_normal(0, D_not * sigma_eta);
             tempar2[i] = tempar1[i]
         if(np.power(dist, 2) == 0):
-            print " division by zero: part 2"
+            print(" division by zero: part 2")
             tempar2  = tempar1
         else:
-            tempar2  = tempar1  - (    np.multiply(self.inner(tempar1, d) , d )  ) / np.power(dist, 2.0)
+            tempar2  = tempar1  - (np.multiply(self.inner(tempar1, d) , d )  ) / np.power(dist, 2.0)
         tempar1 = tempar2
         self.sub_pop[current,:] = self.population[self.temp_index[0],:] + tempar1
         rand_var = self.rand_normal(0, self.sigma_zeta)
@@ -341,12 +341,12 @@ class G3PCX(object):
                     self.best_index = x
                     tempfit  =  self.fitness[x]
             if self.num_evals % 197 == 0:
-                print self.fitness[self.best_index]
-                print self.num_evals, 'num of evals\n\n\n'
+                print(self.fitness[self.best_index])
+                print(self.num_evals, 'num of evals\n\n\n')
             np.savetxt(outfile, [ self.num_evals, self.best_index, self.best_fit], fmt='%1.5f', newline="\n")
-        print self.sub_pop, '  sub_pop'
-        print self.population[self.best_index], ' best sol                                         '
-        print self.fitness[self.best_index], ' fitness'
+        print(self.sub_pop, '  sub_pop')
+        print(self.population[self.best_index], ' best sol')
+        print(self.fitness[self.best_index], ' fitness')
 
 class Replica(G3PCX, multiprocessing.Process):
     def __init__(self, num_samples, burn_in, population_size, topology, train_data, test_data, directory, temperature, swap_interval, parameter_queue, main_process, event, problem_type='regression', max_limit=(-5), min_limit=5):
@@ -483,8 +483,8 @@ class Replica(G3PCX, multiprocessing.Process):
 
     def run(self):
         save_knowledge = True
-        train_rmse_file = open(self.directory+'/train_rmse.csv', 'w')
-        test_rmse_file = open(self.directory+'/test_rmse.csv', 'w')
+        train_rmse_file = open(self.directory+'/train_rmse_'+str(self.temperature)+'.csv', 'w')
+        test_rmse_file = open(self.directory+'/test_rmse_'+str(self.temperature)+'.csv', 'w')
         weights_initial = np.random.uniform(-5, 5, self.w_size)
 
         # ------------------- initialize MCMC
@@ -513,8 +513,12 @@ class Replica(G3PCX, multiprocessing.Process):
         self.evaluate()
         tempfit = self.fitness[self.best_index]
 
+        if save_knowledge:
+            np.savetxt(train_rmse_file, [rmse_train_current])
+            np.savetxt(test_rmse_file, [rmse_test_current])
+
         # start sampling
-        for sample in range(self.num_samples - 1):
+        for sample in range(1, self.num_samples):
             tempfit = self.best_fit
             self.random_parents()
             for i in range(self.children):
@@ -552,12 +556,14 @@ class Replica(G3PCX, multiprocessing.Process):
                 np.savetxt(test_rmse_file, [rmse_test_current])
 
             #SWAPPING PREP
-            if (i%self.swap_interval == 0):
+            # print sample
+            if (sample % self.swap_interval == 0 and sample != 0 ):
+                print('\nTemperature: {} Swapping weights: {}'.format(self.temperature, weights_current[:2]))
                 param = np.concatenate([weights_current, np.asarray([eta]).reshape(1), np.asarray([likelihood]),np.asarray([self.temperature])])
                 self.parameter_queue.put(param)
                 self.signal_main.set()
                 self.event.wait()
-                #print(i, self.temperature)
+                # print(sample, self.temperature)
                 # retrieve parameters fom queues if it has been swapped
                 if not self.parameter_queue.empty() :
                     try:
@@ -568,12 +574,15 @@ class Replica(G3PCX, multiprocessing.Process):
                         self.fitness[self.best_index] = self.fitness_function(weights_current)
                         eta = result[self.w_size]
                         likelihood = result[self.w_size+1]
+                        print('Temperature: {} Swapped weights: {}'.format(self.temperature, weights_current[:2]))
                     except:
                         print ('error')
-
+                else:
+                    print("Khali")
+                self.event.clear()
             elapsed_time = ":".join(Replica.convert_time(time.time() - self.start_time))
 
-            print("Temperature: {} Sample: {}, Best Fitness: {}, Proposal: {}, Time Elapsed: {}".format(self.temperature, sample, rmse_train_current, rmse_train, elapsed_time))
+            print("Temperature: {:.2f} Sample: {:d}, Best Fitness: {:.4f}, Proposal: {:.4f}, Time Elapsed: {:s}".format(self.temperature, sample, rmse_train_current, rmse_train, elapsed_time))
 
         elapsed_time = time.time() - self.start_time
         accept_ratio = num_accept/num_samples
@@ -581,8 +590,7 @@ class Replica(G3PCX, multiprocessing.Process):
         # Close the files
         train_rmse_file.close()
         test_rmse_file.close()
-
-        return accept_ratio
+        print("Temperature: {} Done!".format(self.temperature))
 
 class EvolutionaryParallelTempering(object):
 
@@ -720,11 +728,10 @@ class EvolutionaryParallelTempering(object):
         self.assign_temperatures()
         weights = np.random.randn(self.num_param)
         for chain in range(0, self.num_chains):
-            self.chains.append(Replica(self.num_samples, self.burn_in, self.population_size, self.topology, self.train_data, self.test_data, self.path, self.temperatures[chain], self.swap_interval, self.parameter_queue[chain], self.wait_chain[chain], self.event[chain]))
+            self.chains.append(Replica(self.num_samples, self.burn_in, self.population_size, self.topology, self.train_data, self.test_data, self.path, self.temperatures[chain], self.swap_interval, self.parameter_queue[chain], main_process=self.wait_chain[chain], event=self.event[chain]))
 
     def swap_procedure(self, parameter_queue_1, parameter_queue_2):
-        print("Swapped")
-        if parameter_queue_2.empty() is False and parameter_queue_1.empty() is False:
+        if not parameter_queue_2.empty() and not parameter_queue_1.empty():
             param_1 = parameter_queue_1.get()
             param_2 = parameter_queue_2.get()
             w_1 = param_1[0:self.num_param]
@@ -742,14 +749,19 @@ class EvolutionaryParallelTempering(object):
                 swap_proposal = 1
             u = np.random.uniform(0,1)
             if u < swap_proposal:
-                self.total_swap_proposals += 1
                 self.num_swap += 1
-                param_temp =  param1
+                param_temp =  param_1
                 param_1 = param_2
                 param_2 = param_temp
+                print("Swapped {}, {}".format(param_1[:2], param_2[:2]))
+            else:
+                print("No swapping!!")
+            self.total_swap_proposals += 1
             return param_1, param_2
         else:
+            print("No Swapping occured")
             self.total_swap_proposals += 1
+            raise Exception('empty queue')
             return
 
     def plot_figure(self, list, title):
@@ -820,109 +832,118 @@ class EvolutionaryParallelTempering(object):
         # Define the starting and ending of MCMC Chains
         start = 0
         end = self.num_samples-1
+        print("Num Samples: {}".format(self.num_samples))
         number_exchange = np.zeros(self.num_chains)
         filen = open(self.path + '/num_exchange.txt', 'a')
         #RUN MCMC CHAINS
-        for index in range(0,self.num_chains):
+        for index in range(self.num_chains):
             self.chains[index].start_chain = start
             self.chains[index].end = end
 
-        for index in range(0,self.num_chains):
+        for index in range(self.num_chains):
             self.chains[index].start()
         #SWAP PROCEDURE
         while True:
-            for index in range(0,self.num_chains):
-                self.wait_chain[index].wait()
-                #print(chain_num)
-            for index in range(0,self.num_chains-1):
-                print('starting swap')
-                self.chain_queue.put(self.swap_procedure(self.parameter_queue[index],self.parameter_queue[index+1]))
-                while True:
-                    if self.chain_queue.empty():
-                        self.chain_queue.task_done()
-                        #print(k,'EMPTY QUEUE')
-                        break
-                    swap_process = self.chain_queue.get()
-                    #print(swap_process)
-                    if swap_process is None:
-                        self.chain_queue.task_done()
-                        #print(k,'No Process')
-                        break
-                    param_1, param_2 = swap_process
-
-                    self.parameter_queue[index].put(param_1)
-                    self.parameter_queue[index+1].put(param_2)
-            for index in range (self.num_chains):
-                    self.event[index].set()
             count = 0
             for index in range(self.num_chains):
-                if self.chains[index].is_alive() is False:
+                if not self.chains[index].is_alive():
                     count+=1
+                    print(str(self.chains[index].temperature) +" Dead")
+
             if count == self.num_chains:
                 break
+            print("Waiting")
+            timeout_count = 0
+            for index in range(0,self.num_chains):
+                print("Waiting for chain: {}".format(index+1))
+                flag = self.wait_chain[index].wait(timeout=5)
+                if flag:
+                    print("Signal from chain: {}".format(index+1))
+                    timeout_count += 1
 
+            if timeout_count != self.num_chains:
+                print("Skipping the swap!")
+                continue
+            print("Event occured")
+            for index in range(0,self.num_chains-1):
+                print('starting swap')
+                try:
+                    param_1, param_2 = self.swap_procedure(self.parameter_queue[index],self.parameter_queue[index+1])
+                    self.parameter_queue[index].put(param_1)
+                    self.parameter_queue[index+1].put(param_2)
+                except:
+                    print("Nothing Returned by swap method!")
+            for index in range (self.num_chains):
+                    self.event[index].set()
+                    self.wait_chain[index].clear()
+
+        print("Joining processes")
 
         #JOIN THEM TO MAIN PROCESS
         for index in range(0,self.num_chains):
             self.chains[index].join()
         self.chain_queue.join()
+
         #GETTING DATA
         burn_in = int(self.num_samples*self.burn_in)
-        pos_w = np.zeros((self.num_chains,self.num_samples - burn_in, self.num_param))
-        fx_train_samples = np.zeros((self.num_chains,self.num_samples - burn_in, self.train_data.shape[0]))
         rmse_train = np.zeros((self.num_chains,self.num_samples - burn_in))
-        fx_test_samples = np.zeros((self.num_chains,self.num_samples - burn_in, self.test_data.shape[0]))
         rmse_test = np.zeros((self.num_chains,self.num_samples - burn_in))
         accept_ratio = np.zeros((self.num_chains,1))
 
         for i in range(self.num_chains):
-            file_name = self.path+'/posterior/pos_w_chain_'+ str(self.temperatures[i])+ '.txt'
-            dat = np.loadtxt(file_name)
-            pos_w[i,:,:] = dat[burn_in:,:]
-            file_name = self.path+'/posterior/fxtrain_samples_chain_'+ str(self.temperatures[i])+ '.txt'
-            dat = np.loadtxt(file_name)
-            fxtrain_samples[i,:,:] = dat[burn_in:,:]
-            file_name = self.path+'/posterior/fxtest_samples_chain_'+ str(self.temperatures[i])+ '.txt'
-            dat = np.loadtxt(file_name)
-            fx_test_samples[i,:,:] = dat[burn_in:,:]
-            file_name = self.path+'/posterior/rmse_test_chain_'+ str(self.temperatures[i])+ '.txt'
-            dat = np.loadtxt(file_name)
+            file_name = self.path+'/test_rmse_'+ str(self.temperatures[i])+ '.csv'
+            dat = np.genfromtxt(file_name, delimiter=',')
             rmse_test[i,:] = dat[burn_in:]
-            file_name = self.path+'/posterior/rmse_train_chain_'+ str(self.temperatures[i])+ '.txt'
-            dat = np.loadtxt(file_name)
+            file_name = self.path+'/train_rmse_'+ str(self.temperatures[i])+ '.csv'
+            dat = np.genfromtxt(file_name, delimiter=',')
             rmse_train[i,:] = dat[burn_in:]
-            file_name = self.path + '/posterior/accept_list_chain_' + str(self.temperatures[i]) + '_accept.txt'
-            dat = np.loadtxt(file_name)
-            accept_ratio[i,:] = dat
 
-        pos_w = pos_w.transpose(2,0,1).reshape(self.num_param,-1)
-        accept_total = np.sum(accept_ratio)/self.num_chains
-        fx_train = fxtrain_samples.reshape(self.num_chains*(self.num_samples - burn_in), self.train_data.shape[0])
         rmse_train = rmse_train.reshape(self.num_chains*(self.num_samples - burn_in), 1)
-        fx_test = fxtest_samples.reshape(self.num_chains*(self.NumSamples - burn_in), self.testdata.shape[0])
-        rmse_test = rmse_test.reshape(self.num_chains*(self.NumSamples - burn_in), 1)
-        for s in range(self.num_param):
-            self.plot_figure(pos_w[s,:], 'pos_distri_'+str(s))
+        rmse_test = rmse_test.reshape(self.num_chains*(self.num_samples - burn_in), 1)
+
+        plt.plot(rmse_train[:self.num_samples - burn_in])
+        plt.xlabel('samples')
+        plt.ylabel('RMSE')
+        plt.show()
+        plt.clf()
+
+        plt.plot(rmse_train)
+        plt.xlabel('samples')
+        plt.ylabel('RMSE')
+        plt.show()
+        plt.clf()
+
+        plt.plot(rmse_test[:self.num_samples - burn_in])
+        plt.xlabel('samples')
+        plt.ylabel('RMSE')
+        plt.show()
+        plt.clf()
+
+        plt.plot(rmse_test)
+        plt.xlabel('samples')
+        plt.ylabel('RMSE')
+        plt.show()
+
         print("NUMBER OF SWAPS =", self.num_swap)
         print("SWAP ACCEPTANCE = ", self.num_swap*100/self.total_swap_proposals," %")
-        return (pos_w, fx_train, fx_test, x_train, x_test, rmse_train, rmse_test, accept_total)
+        return (rmse_train, rmse_test)
 
 def make_directory(path):
     if not os.path.isdir(path):
         os.makedirs(path)
 
 if __name__ == '__main__':
-    num_samples = 100000
+    num_samples = 40000
     swap_ratio = 0.1
     population_size = 100
     burn_in = 0.2
     num_chains = 10
     max_temp = 20
-    swap_interval = swap_ratio * num_samples
+    swap_interval = swap_ratio * num_samples/num_chains
     problem_type = 'regression'
     topology = [4, 25, 1]
     problem_name = 'synthetic'
-    path = 'results/synthetic'
+    path = 'results/synthetic_' + str(num_chains) + '_' + str(max_temp)
 
     train_data_file = '../synthetic_data/target_train.csv'
     test_data_file = '../synthetic_data/target_test.csv'
