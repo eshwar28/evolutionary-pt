@@ -129,242 +129,9 @@ class Network(object):
         fx = self.generate_output(data, w)
         return self.calculate_rmse(fx, y)
 
-class G3PCX(object):
-    def __init__(self, population_size, num_variables, max_limits, min_limits, max_evals=500000):
-        self.initialize_parameters()
-        self.sp_size = self.children + self.family
-        self.population = np.random.uniform(min_limits[0], max_limits[0], size=(population_size, num_variables))  #[SpeciesPopulation(num_variables) for count in xrange(population_size)]
-        self.sub_pop = np.random.uniform(min_limits[0], max_limits[0], size=(self.sp_size, num_variables))  #[SpeciesPopulation(num_variables) for count in xrange(NPSize)]
-        self.fitness = np.zeros(population_size)
-        self.sp_fit  = np.zeros(self.sp_size)
-        self.best_index = 0
-        self.best_fit = 0
-        self.worst_index = 0
-        self.worst_fit = 0
-        self.rand_parents =  self.num_parents
-        self.temp_index =  np.arange(0, population_size)
-        self.rank =  np.arange(0, population_size)
-        self.list = np.arange(0, self.sp_size)
-        self.parents = np.arange(0, population_size)
-        self.population_size = population_size
-        self.num_variables = num_variables
-        self.num_evals = 0
-        self.max_evals = max_evals
-        self.problem = 1
 
-    def fitness_function(self, x):    #  function  (can be any other function, model or even a neural network)
-        fit = 0.0
-        if self.problem == 1: # rosenbrock
-            for j in range(x.size -1):
-                fit += (100.0*(x[j]*x[j] - x[j+1])*(x[j]*x[j] - x[j+1]) + (x[j]-1.0)*(x[j]-1.0))
-        elif self.problem ==2:  # ellipsoidal - sphere function
-            for j in range(x.size):
-                fit = fit + ((j+1)*(x[j]*x[j]))
-        return fit # note we will maximize fitness, hence minimize error
-
-    def initialize_parameters(self):
-        self.epsilon = 1e-40  # convergence
-        self.sigma_eta = 0.1
-        self.sigma_zeta = 0.1
-        self.children = 2
-        self.num_parents = 3
-        self.family = 2
-
-    def rand_normal(self, mean, stddev):
-        if (not G3PCX.n2_cached):
-            #choose a point x,y in the unit circle uniformly at random
-            x = np.random.uniform(-1,1,1)
-            y = np.random.uniform(-1,1,1)
-            r = x*x + y*y
-            while (r == 0 or r > 1):
-                x = np.random.uniform(-1,1,1)
-                y = np.random.uniform(-1,1,1)
-                r = x*x + y*y
-            # Apply Box-Muller transform on x, y
-            d = np.sqrt(-2.0*np.log(r)/r)
-            n1 = x*d
-            G3PCX.n2 = y*d
-            # scale and translate to get desired mean and standard deviation
-            result = n1*stddev + mean
-            G3PCX.n2_cached = True
-            return result
-        else:
-            G3PCX.n2_cached = False
-            return G3PCX.n2*stddev + mean
-
-    def evaluate(self):
-        self.fitness[0] = self.fitness_function(self.population[0,:])
-        self.best_fit = self.fitness[0]
-        for i in range(self.population_size):
-            self.fitness[i] = self.fitness_function(self.population[i,:])
-            if (self.best_fit> self.fitness[i]):
-                self.best_fit =  self.fitness[i]
-                self.best_index = i
-        self.num_evals += 1
-
-    # calculates the magnitude of a vector
-    def mod(self, List):
-        sum = 0
-        for i in range(self.num_variables):
-            sum += (List[i] * List[i] )
-        return np.sqrt(sum)
-
-    def parent_centric_xover(self, current):
-        centroid = np.zeros(self.num_variables)
-        tempar1 = np.zeros(self.num_variables)
-        tempar2 = np.zeros(self.num_variables)
-        temp_rand = np.zeros(self.num_variables)
-        d = np.zeros(self.num_variables)
-        D = np.zeros(self.num_parents)
-        temp1, temp2, temp3 = (0,0,0)
-        diff = np.zeros((self.num_parents, self.num_variables))
-        for i in range(self.num_variables):
-            for u in range(self.num_parents):
-                centroid[i]  = centroid[i] +  self.population[self.temp_index[u],i]
-        centroid   = centroid / self.num_parents
-        # calculate the distace (d) from centroid to the index parent self.temp_index[0]
-        # also distance (diff) between index and other parents are computed
-        for j in range(1, self.num_parents):
-            for i in range(self.num_variables):
-                if j == 1:
-                    d[i]= centroid[i]  - self.population[self.temp_index[0],i]
-                diff[j, i] = self.population[self.temp_index[j], i] - self.population[self.temp_index[0],i]
-            if (self.mod(diff[j,:]) < self.epsilon):
-                print('Points are very close to each other. Quitting this run')
-                return 0
-        dist = self.mod(d)
-        if (dist < self.epsilon):
-            print ("\nError -  points are very close to each other. Quitting this run\n")
-            return 0
-        # orthogonal directions are computed
-        for j in range(1, self.num_parents):
-            temp1 = self.inner(diff[j,:] , d )
-            if ((self.mod(diff[j,:]) * dist) == 0):
-                print("Division by zero")
-                temp2 = temp1 / (1)
-            else:
-                temp2 = temp1 / (self.mod(diff[j,:]) * dist)
-            temp3 = 1.0 - np.power(temp2, 2)
-            D[j] = self.mod(diff[j]) * np.sqrt(np.abs(temp3))
-        D_not = 0.0
-        for i in range(1, self.num_parents):
-            D_not += D[i]
-        D_not /= (self.num_parents - 1) # this is the average of the perpendicular distances from all other parents (minus the index parent) to the index vector
-        G3PCX.n2 = 0.0
-        G3PCX.n2_cached = False
-        for i in range(self.num_variables):
-            tempar1[i] = self.rand_normal(0,  self.sigma_eta * D_not) #rand_normal(0, D_not * sigma_eta);
-            tempar2[i] = tempar1[i]
-        if(np.power(dist, 2) == 0):
-            print(" division by zero: part 2")
-            tempar2  = tempar1
-        else:
-            tempar2  = tempar1  - (np.multiply(self.inner(tempar1, d) , d )  ) / np.power(dist, 2.0)
-        tempar1 = tempar2
-        self.sub_pop[current,:] = self.population[self.temp_index[0],:] + tempar1
-        rand_var = self.rand_normal(0, self.sigma_zeta)
-        for j in range(self.num_variables):
-            temp_rand[j] =  rand_var
-        self.sub_pop[current,:] += np.multiply(temp_rand ,  d )
-        self.sp_fit[current] = self.fitness_function(self.sub_pop[current,:])
-        self.num_evals += 1
-        return 1
-
-    def inner(self, ind1, ind2):
-        sum = 0.0
-        for i in range(self.num_variables):
-            sum += (ind1[i] * ind2[i])
-        return  sum
-
-    def sort_population(self):
-        dbest = 99
-        for i in range(self.children + self.family):
-            self.list[i] = i
-        for i in range(self.children + self.family - 1):
-            dbest = self.sp_fit[self.list[i]]
-            for j in range(i + 1, self.children + self.family):
-                if(self.sp_fit[self.list[j]]  < dbest):
-                    dbest = self.sp_fit[self.list[j]]
-                    temp = self.list[j]
-                    self.list[j] = self.list[i]
-                    self.list[i] = temp
-
-    def replace_parents(self): #here the best (1 or 2) individuals replace the family of parents
-        for j in range(self.family):
-            self.population[ self.parents[j],:]  =  self.sub_pop[ self.list[j],:] # Update population with new species
-            fx = self.fitness_function(self.population[ self.parents[j],:])
-            self.fitness[self.parents[j]]   =  fx
-            self.num_evals += 1
-
-    def family_members(self): #//here a random family (1 or 2) of parents is created who would be replaced by good individuals
-        swp = 0
-        for i in range(self.population_size):
-            self.parents[i] = i
-        for i in range(self.family):
-            randomIndex = random.randint(0, self.population_size - 1) + i # Get random index in population
-            if randomIndex > (self.population_size-1):
-                randomIndex = self.population_size-1
-            swp = self.parents[randomIndex]
-            self.parents[randomIndex] = self.parents[i]
-            self.parents[i] = swp
-
-    def find_parents(self): #here the parents to be replaced are added to the temporary subpopulation to assess their goodness against the new solutions formed which will be the basis of whether they should be kept or not
-        self.family_members()
-        for j in range(self.family):
-            self.sub_pop[self.children + j, :] = self.population[self.parents[j],:]
-            fx = self.fitness_function(self.sub_pop[self.children + j, :])
-            self.sp_fit[self.children + j]  = fx
-            self.num_evals += 1
-
-    def random_parents(self ):
-        for i in range(self.population_size):
-            self.temp_index[i] = i
-        swp=self.temp_index[0]
-        self.temp_index[0]=self.temp_index[self.best_index]
-        self.temp_index[self.best_index]  = swp
-        # best is always included as a parent and is the index parent
-        # this can be changed for solving a generic problem
-        for i in range(1, self.rand_parents):
-            index= np.random.randint(self.population_size)+i
-            if index > (self.population_size-1):
-                index = self.population_size-1
-            swp=self.temp_index[index]
-            self.temp_index[index]=self.temp_index[i]
-            self.temp_index[i]=swp
-
-    def evolve(self, outfile):
-        tempfit = 0
-        prevfitness = 99
-        self.evaluate()
-        tempfit= self.fitness[self.best_index]
-        while(self.num_evals < self.max_evals):
-            tempfit = self.best_fit
-            self.random_parents()
-            for i in range(self.children):
-                tag = self.parent_centric_xover(i)
-                if (tag == 0):
-                    break
-            if tag == 0:
-                break
-            self.find_parents()
-            self.sort_population()
-            self.replace_parents()
-            self.best_index = 0
-            tempfit = self.fitness[0]
-            for x in range(1, self.population_size):
-                if(self.fitness[x] < tempfit):
-                    self.best_index = x
-                    tempfit  =  self.fitness[x]
-            if self.num_evals % 197 == 0:
-                print(self.fitness[self.best_index])
-                print(self.num_evals, 'num of evals\n\n\n')
-            np.savetxt(outfile, [ self.num_evals, self.best_index, self.best_fit], fmt='%1.5f', newline="\n")
-        print(self.sub_pop, '  sub_pop')
-        print(self.population[self.best_index], ' best sol')
-        print(self.fitness[self.best_index], ' fitness')
-
-class Replica(G3PCX, multiprocessing.Process):
-    def __init__(self, num_samples, burn_in, population_size, topology, train_data, test_data, directory, temperature, swap_interval, parameter_queue, problem_type,  main_process, event, max_limit=(-5), min_limit=5):
+class Replica(multiprocessing.Process):
+    def __init__(self, num_samples, burn_in, topology, train_data, test_data, directory, temperature, swap_interval, parameter_queue, problem_type, main_process, event):
         # MULTIPROCESSING CLASS CONSTRUCTOR
         multiprocessing.Process.__init__(self)
         self.process_id = temperature
@@ -384,17 +151,15 @@ class Replica(G3PCX, multiprocessing.Process):
         self.directory = directory
         self.w_size = (topology[0] * topology[1]) + (topology[1] * topology[2]) + topology[1] + topology[2]
         self.neural_network = Network(topology, train_data, test_data)
-        self.min_limits = np.repeat(min_limit, self.w_size)
-        self.max_limits = np.repeat(max_limit, self.w_size)
         self.initialize_sampling_parameters()
         self.create_directory(directory)
-        G3PCX.__init__(self, population_size, self.w_size, self.max_limits, self.min_limits)
 
     def fitness_function(self, x):
         fitness = self.neural_network.evaluate_fitness(x)
         return fitness
 
     def initialize_sampling_parameters(self):
+        self.w_stepsize = 0.05
         self.eta_stepsize = 0.02
         self.sigma_squared = 36
         self.nu_1 = 0
@@ -445,7 +210,7 @@ class Replica(G3PCX, multiprocessing.Process):
     def gaussian_likelihood(neural_network, data, weights, tausq, temperature):
         desired = data[:, neural_network.topology[0]: neural_network.topology[0] + neural_network.topology[2]]
         prediction = neural_network.generate_output(data, weights)
-        rmse = Network.calculate_rmse(prediction, desired)
+        rmse = Replica.calculate_rmse(prediction, desired)
         loss = -0.5 * np.log(2 * np.pi * tausq) - 0.5 * np.square(desired - prediction) / tausq
         return [np.sum(loss)/temperature, rmse]
 
@@ -469,7 +234,6 @@ class Replica(G3PCX, multiprocessing.Process):
             loss = self.gaussian_prior(self.sigma_squared, self.nu_1, self.nu_2, weights, tau)
         elif self.problem_type == 'classification':
             loss = self.classification_prior(self.sigma_squared, weights)
-        # quit()
         return loss
 
     def evaluate_proposal(self, neural_network, train_data, test_data, weights_proposal, tau_proposal, likelihood_current, prior_current):
@@ -479,7 +243,7 @@ class Replica(G3PCX, multiprocessing.Process):
         prior_proposal = self.prior_function(weights_proposal, tau_proposal)
         difference_likelihood = likelihood_proposal - likelihood_current
         difference_prior = prior_proposal - prior_current
-        mh_ratio = min(1, np.exp(min(709, difference_likelihood)))
+        mh_ratio = min(1, np.exp(min(709, difference_likelihood + difference_prior)))
         u = np.random.uniform(0,1)
         if u < mh_ratio:
             accept = True
@@ -489,7 +253,6 @@ class Replica(G3PCX, multiprocessing.Process):
             return accept, rmse_train_proposal, rmse_test_proposal, likelihood_current, prior_current
         else:
             return accept, rmse_train_proposal, rmse_test_proposal, acc_train, acc_test, likelihood_current, prior_current
-
 
     def run(self):
         save_knowledge = True
@@ -528,40 +291,17 @@ class Replica(G3PCX, multiprocessing.Process):
             acc_test_current = acc_test
             acc_train_current = acc_train
 
-        tempfit = 0
-        self.evaluate()
-        tempfit = self.fitness[self.best_index]
-        writ = 0
         if save_knowledge:
-            train_rmse_file.write(str(rmse_train_current)+"\n")
-            test_rmse_file.write(str(rmse_test_current)+"\n")
+            np.savetxt(train_rmse_file, [rmse_train_current])
+            np.savetxt(test_rmse_file, [rmse_test_current])
             if problem_type == 'classification':
-                train_acc_file.write(str(acc_train_current)+"\n")
-                test_acc_file.write(str(acc_test_current)+"\n")
-                writ += 1
+                np.savetxt(train_acc_file, [acc_train_current])
+                np.savetxt(test_acc_file, [acc_test_current])
 
         # start sampling
         for sample in range(1, self.num_samples):
-            tempfit = self.best_fit
-            self.random_parents()
-            for i in range(self.children):
-                tag = self.parent_centric_xover(i)
-                if (tag == 0):
-                    break
-            if tag == 0:
-                break
-            self.find_parents()
-            self.sort_population()
-            self.replace_parents()
-            self.best_index = 0
-            tempfit = self.fitness[0]
-            for x in range(1, self.population_size):
-                if(self.fitness[x] < tempfit):
-                    self.best_index = x
-                    tempfit  =  self.fitness[x]
             # Evaluate population proposal
-            # for index in range(self.population_size):
-            weights_proposal = self.population[self.best_index]
+            weights_proposal = weights_current + np.random.normal(0, self.w_stepsize, self.w_size)
             eta_proposal = eta + np.random.normal(0, self.eta_stepsize, 1)
             tau_proposal = np.exp(eta_proposal)
             if self.problem_type == 'classification':
@@ -581,18 +321,16 @@ class Replica(G3PCX, multiprocessing.Process):
                     acc_test_current = acc_test
 
             if save_knowledge:
-                train_rmse_file.write(str(rmse_train_current)+"\n")
-                test_rmse_file.write(str(rmse_test_current)+"\n")
+                np.savetxt(train_rmse_file, [rmse_train_current])
+                np.savetxt(test_rmse_file, [rmse_test_current])
                 if problem_type == 'classification':
-                    train_acc_file.write(str(acc_train_current)+"\n")
-                    test_acc_file.write(str(acc_test_current)+"\n")
-                    writ += 1
-                    # print(writ, acc_test_current, "writing acc")
+                    np.savetxt(train_acc_file, [acc_train_current])
+                    np.savetxt(test_acc_file, [acc_test_current])
 
             #SWAPPING PREP
             # print sample
             if (sample % self.swap_interval == 0 and sample != 0 ):
-                # print('\nTemperature: {} Swapping weights: {}'.format(self.temperature, weights_current[:2]))
+                print('\nTemperature: {} Swapping weights: {}'.format(self.temperature, weights_current[:2]))
                 param = np.concatenate([weights_current, np.asarray([eta]).reshape(1), np.asarray([likelihood*self.temperature]),np.asarray([self.temperature])])
                 self.parameter_queue.put(param)
                 self.signal_main.set()
@@ -602,13 +340,9 @@ class Replica(G3PCX, multiprocessing.Process):
                 if not self.parameter_queue.empty() :
                     try:
                         result =  self.parameter_queue.get()
-                        #print(self.temperature, w, 'param after swap')
                         weights_current = result[0:self.w_size]
-                        self.population[self.best_index] = weights_current
-                        self.fitness[self.best_index] = self.fitness_function(weights_current)
                         eta = result[self.w_size]
                         likelihood = result[self.w_size+1]/self.temperature
-                        # likelihood = self.likelihood_function(self.neural_network, self.train_data, weights_current, np.exp(eta))
                         print('Temperature: {} Swapped weights: {}'.format(self.temperature, weights_current[:2]))
                     except:
                         print ('error')
@@ -617,19 +351,21 @@ class Replica(G3PCX, multiprocessing.Process):
                 self.event.clear()
             elapsed_time = ":".join(Replica.convert_time(time.time() - self.start_time))
 
-            print("Temperature: {:.2f} Sample: {:d}, Best Fitness: {:.4f}, Proposal: {:.4f}, Time Elapsed: {:s}".format(self.temperature, sample, rmse_train_current, rmse_train, elapsed_time))
+            # print("Temperature: {:.2f} Sample: {:d}, Best Fitness: {:.4f}, Proposal: {:.4f}, Time Elapsed: {:s}".format(self.temperature, sample, rmse_train_current, rmse_train, elapsed_time))
 
         elapsed_time = time.time() - self.start_time
         accept_ratio = num_accept/num_samples
-        print("Written {} values for Accuracies".format(writ))
+
         # Close the files
         train_rmse_file.close()
         test_rmse_file.close()
+        train_acc_file.close()
+        test_acc_file.close()
         print("Temperature: {} Done!".format(self.temperature))
 
-class EvolutionaryParallelTempering(object):
+class ParallelTempering(object):
 
-    def __init__(self, burn_in, train_data, test_data, topology, num_chains, max_temp, num_samples, swap_interval, path, population_size, problem_type='regression', geometric=True):
+    def __init__(self, burn_in, train_data, test_data, topology, num_chains, max_temp, num_samples, swap_interval, path, problem_type, geometric=True):
         #FNN Chain variables
         self.train_data = train_data
         self.test_data = test_data
@@ -648,7 +384,6 @@ class EvolutionaryParallelTempering(object):
         self.temperatures = []
         self.num_samples = int(num_samples/self.num_chains)
         self.geometric = geometric
-        self.population_size = population_size
         # create queues for transfer of parameters between process chain
         self.parameter_queue = [multiprocessing.Queue() for i in range(num_chains)]
         self.chain_queue = multiprocessing.JoinableQueue()
@@ -764,7 +499,7 @@ class EvolutionaryParallelTempering(object):
         self.assign_temperatures()
         weights = np.random.randn(self.num_param)
         for chain in range(0, self.num_chains):
-            self.chains.append(Replica(self.num_samples, self.burn_in, self.population_size, self.topology, self.train_data, self.test_data, self.path, self.temperatures[chain], self.swap_interval, self.parameter_queue[chain], self.problem_type, main_process=self.wait_chain[chain], event=self.event[chain]))
+            self.chains.append(Replica(self.num_samples, self.burn_in, self.topology, self.train_data, self.test_data, self.path, self.temperatures[chain], self.swap_interval, self.parameter_queue[chain], self.problem_type, main_process=self.wait_chain[chain], event=self.event[chain]))
 
     def swap_procedure(self, parameter_queue_1, parameter_queue_2):
         if not parameter_queue_2.empty() and not parameter_queue_1.empty():
@@ -948,14 +683,13 @@ class EvolutionaryParallelTempering(object):
             dat = np.genfromtxt(file_name, delimiter=',')
             rmse_train[i,:] = dat[burn_in:]
 
-            if self.problem_type == 'classification':
-                file_name = self.path+'/test_acc_'+ str(self.temperatures[i])+ '.csv'
-                dat = np.genfromtxt(file_name, delimiter=',')
-                acc_test[i,:] = dat[burn_in:]
+            file_name = self.path+'/test_acc_'+ str(self.temperatures[i])+ '.csv'
+            dat = np.genfromtxt(file_name, delimiter=',')
+            acc_test[i,:] = dat[burn_in:]
 
-                file_name = self.path+'/train_acc_'+ str(self.temperatures[i])+ '.csv'
-                dat = np.genfromtxt(file_name, delimiter=',')
-                acc_train[i,:] = dat[burn_in:]
+            file_name = self.path+'/train_acc_'+ str(self.temperatures[i])+ '.csv'
+            dat = np.genfromtxt(file_name, delimiter=',')
+            acc_train[i,:] = dat[burn_in:]
 
         rmse_train = rmse_train.reshape(self.num_chains*(self.num_samples - burn_in), 1)
         rmse_test = rmse_test.reshape(self.num_chains*(self.num_samples - burn_in), 1)
@@ -988,7 +722,7 @@ class EvolutionaryParallelTempering(object):
 
         plt.plot(acc_test[:self.num_samples - burn_in])
         plt.xlabel('samples')
-        plt.ylabel('RMSE')
+        plt.ylabel('Accuracy')
         plt.show()
         plt.clf()
 
@@ -1016,13 +750,13 @@ if __name__ == '__main__':
         num_samples = 40000
         population_size = 100
         burn_in = 0.2
-        num_chains = 1
+        num_chains = 10
         max_temp = 20
         swap_interval = 100
         problem_type = 'regression'
         topology = [4, 25, 1]
         problem_name = 'synthetic'
-        path = 'results/synthetic_' + str(num_chains) + '_' + str(max_temp)
+        path = 'results_rw/synthetic_' + str(num_chains) + '_' + str(max_temp)
 
         train_data_file = '../Datasets/synthetic_data/target_train.csv'
         test_data_file = '../Datasets/synthetic_data/target_test.csv'
@@ -1041,7 +775,7 @@ if __name__ == '__main__':
         problem_type = 'regression'
         topology = [520, 48, 2]
         problem_name = 'UJIndoorLoc_0'
-        path = 'results/UJIndoorLoc_0_' + str(num_chains) + '_' + str(max_temp)
+        path = 'results_rw/UJIndoorLoc_0_' + str(num_chains) + '_' + str(max_temp)
 
         train_data_file = '../UJIndoorLoc/sourceData/0train.csv'
         test_data_file = '../UJIndoorLoc/sourceData/0test.csv'
@@ -1051,8 +785,8 @@ if __name__ == '__main__':
 
     elif problem == 3:
         #Iris
-        num_samples = 20000
-        population_size = 200
+        num_samples = 40000
+        population_size = 100
         burn_in = 0.2
         num_chains = 10
         max_temp = 20
@@ -1060,7 +794,7 @@ if __name__ == '__main__':
         problem_type = 'classification'
         topology = [4, 15, 3]
         problem_name = 'Iris'
-        path = 'results/Iris' + str(num_chains) + '_' + str(max_temp)
+        path = 'results_rw/Iris' + str(num_chains) + '_' + str(max_temp)
 
         train_data_file = '../Datasets/Iris/iris-train.csv'
         test_data_file = '../Datasets/Iris/iris-test.csv'
@@ -1087,9 +821,8 @@ if __name__ == '__main__':
         train_data = np.genfromtxt(train_data_file, delimiter=',')
         test_data = np.genfromtxt(test_data_file, delimiter=',')
 
-    model = EvolutionaryParallelTempering(burn_in, train_data, test_data, topology, num_chains, max_temp, num_samples, swap_interval, path, population_size, problem_type=problem_type)
+    model = ParallelTempering(burn_in, train_data, test_data, topology, num_chains, max_temp, num_samples, swap_interval, path, problem_type=problem_type)
     model.initialize_chains()
-
     rmse_train, rmse_test, acc_train, acc_test = model.run_chains()
     print("Combined Result: ")
     print("Train RMSE: ", rmse_train.mean(), "std: ", rmse_train.std())
