@@ -19,16 +19,19 @@ class Network(object):
         np.random.seed(int(time.time()))
         self.train_data = train_data
         self.test_data = test_data
+        self.lrate = learn_rate
+
         self.W1 = np.random.randn(self.topology[0], self.topology[1]) / np.sqrt(self.topology[0])
         self.B1 = np.random.randn(1, self.topology[1]) / np.sqrt(self.topology[1])  # bias first layer
         self.W2 = np.random.randn(self.topology[1], self.topology[2]) / np.sqrt(self.topology[1])
         self.B2 = np.random.randn(1, self.topology[2]) / np.sqrt(self.topology[1])  # bias second layer
+
         self.hidout = np.zeros((1, self.topology[1]))  # output of first hidden layer
         self.out = np.zeros((1, self.topology[2]))  # output last layer
 
     @staticmethod
     def sigmoid(x):
-        x = x.astype(np.float128)
+        # x = x.astype(np.float128)
         return 1 / (1 + np.exp(-x))
 
     def sample_er(self, actualout):
@@ -934,8 +937,9 @@ class EvolutionaryParallelTempering(object):
         burn_in = int(self.num_samples*self.burn_in)
         rmse_train = np.zeros((self.num_chains,self.num_samples - burn_in))
         rmse_test = np.zeros((self.num_chains,self.num_samples - burn_in))
-        acc_train = np.zeros((self.num_chains,self.num_samples - burn_in))
-        acc_test = np.zeros((self.num_chains,self.num_samples - burn_in))
+        if self.problem_type == 'classification':
+            acc_train = np.zeros((self.num_chains,self.num_samples - burn_in))
+            acc_test = np.zeros((self.num_chains,self.num_samples - burn_in))
         accept_ratio = np.zeros((self.num_chains,1))
 
         for i in range(self.num_chains):
@@ -959,18 +963,13 @@ class EvolutionaryParallelTempering(object):
 
         rmse_train = rmse_train.reshape(self.num_chains*(self.num_samples - burn_in), 1)
         rmse_test = rmse_test.reshape(self.num_chains*(self.num_samples - burn_in), 1)
-        acc_train = acc_train.reshape(self.num_chains*(self.num_samples - burn_in), 1)
-        acc_test = acc_test.reshape(self.num_chains*(self.num_samples - burn_in), 1)
+        if self.problem_type == 'classification':
+            acc_train = acc_train.reshape(self.num_chains*(self.num_samples - burn_in), 1)
+            acc_test = acc_test.reshape(self.num_chains*(self.num_samples - burn_in), 1)
 
         plt.plot(rmse_train[:self.num_samples - burn_in])
         plt.xlabel('samples')
         plt.ylabel('RMSE')
-        plt.show()
-        plt.clf()
-
-        plt.plot(acc_train[:self.num_samples - burn_in])
-        plt.xlabel('samples')
-        plt.ylabel('Accuracy')
         plt.show()
         plt.clf()
 
@@ -986,22 +985,34 @@ class EvolutionaryParallelTempering(object):
         plt.show()
         plt.clf()
 
-        plt.plot(acc_test[:self.num_samples - burn_in])
+        plt.plot(rmse_test)
         plt.xlabel('samples')
         plt.ylabel('RMSE')
         plt.show()
         plt.clf()
 
 
-        plt.plot(rmse_test)
-        plt.xlabel('samples')
-        plt.ylabel('RMSE')
-        plt.show()
+        if self.problem_type == 'classification':
+            plt.plot(acc_train[:self.num_samples - burn_in])
+            plt.xlabel('samples')
+            plt.ylabel('Accuracy')
+            plt.show()
+            plt.clf()
+
+            plt.plot(acc_test[:self.num_samples - burn_in])
+            plt.xlabel('samples')
+            plt.ylabel('RMSE')
+            plt.show()
+            plt.clf()
 
         print("NUMBER OF SWAPS MAIN =", total_swaps_main)
         print("SWAP ACCEPTANCE = ", self.num_swap*100/self.total_swap_proposals," %")
         print("SWAP ACCEPTANCE MAIN = ", swaps_appected_main*100/total_swaps_main," %")
-        return (rmse_train, rmse_test, acc_train, acc_test)
+
+        if self.problem_type == 'classification':
+            return (rmse_train, rmse_test, acc_train, acc_test)
+
+        return (rmse_train, rmse_test)
 
 def make_directory(path):
     if not os.path.isdir(path):
@@ -1009,14 +1020,14 @@ def make_directory(path):
 
 if __name__ == '__main__':
     # Select problem
-    problem = 4
+    problem = 5
 
     if problem == 1:
         # Synthetic
         num_samples = 40000
         population_size = 100
         burn_in = 0.2
-        num_chains = 1
+        num_chains = 10
         max_temp = 20
         swap_interval = 100
         problem_type = 'regression'
@@ -1051,11 +1062,11 @@ if __name__ == '__main__':
 
     elif problem == 3:
         #Iris
-        num_samples = 20000
-        population_size = 200
+        num_samples = 30000
+        population_size = 50
         burn_in = 0.2
-        num_chains = 10
-        max_temp = 20
+        num_chains = 12
+        max_temp = 25
         swap_interval = 100
         problem_type = 'classification'
         topology = [4, 15, 3]
@@ -1071,10 +1082,10 @@ if __name__ == '__main__':
     elif problem == 4:
         #Ions
         num_samples = 40000
-        population_size = 200
+        population_size = 50
         burn_in = 0.2
-        num_chains = 10
-        max_temp = 20
+        num_chains = 12
+        max_temp = 25
         swap_interval = 100
         problem_type = 'classification'
         topology = [34, 50, 2]
@@ -1087,23 +1098,58 @@ if __name__ == '__main__':
         train_data = np.genfromtxt(train_data_file, delimiter=',')
         test_data = np.genfromtxt(test_data_file, delimiter=',')
 
+    elif problem == 5:
+        #Cancer
+        num_samples = 40000
+        population_size = 50
+        burn_in = 0.2
+        num_chains = 12
+        max_temp = 25
+        swap_interval = 100
+        problem_type = 'classification'
+        topology = [9, 12, 2]
+        problem_name = 'Cancer'
+        path = 'results/Cancer' + str(num_chains) + '_' + str(max_temp)
+
+        train_data_file = '../Datasets/Cancer/ftrain.txt'
+        test_data_file = '../Datasets/Cancer/ftest.txt'
+
+        train_data = np.genfromtxt(train_data_file)
+        test_data = np.genfromtxt(test_data_file)
+        print(train_data.shape)
+
+    input("Problem: {}".format(problem_name))
     model = EvolutionaryParallelTempering(burn_in, train_data, test_data, topology, num_chains, max_temp, num_samples, swap_interval, path, population_size, problem_type=problem_type)
     model.initialize_chains()
 
-    rmse_train, rmse_test, acc_train, acc_test = model.run_chains()
-    print("Combined Result: ")
-    print("Train RMSE: ", rmse_train.mean(), "std: ", rmse_train.std())
-    print("Test RMSE: ", rmse_test.mean(), "std: ", rmse_test.std())
-    print("Train Accuracy: ", acc_train.mean(), "std: ", acc_train.std())
-    print("Test Accuracy: ", acc_test.mean(), "std: ", acc_test.std())
-    num_samples = int(num_samples/num_chains)
-    burn_in = int(burn_in*num_samples)
-    rmse_train = rmse_train[: num_samples - burn_in]
-    rmse_test = rmse_test[: num_samples - burn_in]
-    acc_train = acc_train[: num_samples - burn_in]
-    acc_test = acc_test[: num_samples - burn_in]
-    print("\nMain Chain Result: ")
-    print("Train RMSE: ", rmse_train.mean(), "std: ", rmse_train.std())
-    print("Test RMSE: ", rmse_test.mean(), "std: ", rmse_test.std())
-    print("Train Accuracy: ", acc_train.mean(), "std: ", acc_train.std())
-    print("Test Accuracy: ", acc_test.mean(), "std: ", acc_test.std())
+    if problem_type == 'classification':
+        rmse_train, rmse_test, acc_train, acc_test = model.run_chains()
+        print("Combined Result: ")
+        print("Train RMSE: ", rmse_train.mean(), "std: ", rmse_train.std())
+        print("Test RMSE: ", rmse_test.mean(), "std: ", rmse_test.std())
+        print("Train Accuracy: ", acc_train.mean(), "std: ", acc_train.std())
+        print("Test Accuracy: ", acc_test.mean(), "std: ", acc_test.std())
+        num_samples = int(num_samples/num_chains)
+        burn_in = int(burn_in*num_samples)
+        rmse_train = rmse_train[: num_samples - burn_in]
+        rmse_test = rmse_test[: num_samples - burn_in]
+        acc_train = acc_train[: num_samples - burn_in]
+        acc_test = acc_test[: num_samples - burn_in]
+        print("\nMain Chain Result: ")
+        print("Train RMSE: ", rmse_train.mean(), "std: ", rmse_train.std())
+        print("Test RMSE: ", rmse_test.mean(), "std: ", rmse_test.std())
+        print("Train Accuracy: ", acc_train.mean(), "std: ", acc_train.std())
+        print("Test Accuracy: ", acc_test.mean(), "std: ", acc_test.std())
+
+    else:
+        rmse_train, rmse_test = model.run_chains()
+        print("Combined Result: ")
+        print("Train RMSE: ", rmse_train.mean(), "std: ", rmse_train.std())
+        print("Test RMSE: ", rmse_test.mean(), "std: ", rmse_test.std())
+        num_samples = int(num_samples/num_chains)
+        burn_in = int(burn_in*num_samples)
+        rmse_train = rmse_train[: num_samples - burn_in]
+        rmse_test = rmse_test[: num_samples - burn_in]
+        print("\nMain Chain Result: ")
+        print("Train RMSE: ", rmse_train.mean(), "std: ", rmse_train.std())
+        print("Test RMSE: ", rmse_test.mean(), "std: ", rmse_test.std())

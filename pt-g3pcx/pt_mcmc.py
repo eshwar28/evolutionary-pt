@@ -28,7 +28,7 @@ class Network(object):
 
     @staticmethod
     def sigmoid(x):
-        x = x.astype(np.float128)
+        # x = x.astype(np.float128)
         return 1 / (1 + np.exp(-x))
 
     def sample_er(self, actualout):
@@ -160,7 +160,7 @@ class Replica(multiprocessing.Process):
 
     def initialize_sampling_parameters(self):
         self.w_stepsize = 0.05
-        self.eta_stepsize = 0.02
+        self.eta_stepsize = 0.01
         self.sigma_squared = 36
         self.nu_1 = 0
         self.nu_2 = 0
@@ -199,9 +199,10 @@ class Replica(multiprocessing.Process):
         accuracy = Network.calculate_accuracy(fx, y)
         return [loss/temperature, rmse, accuracy]
 
-    @staticmethod
-    def classification_prior(sigma_squared, weights):
-        part_1 = -1 * ((weights.shape[0]) / 2) * np.log(sigma_squared)
+    def classification_prior(self, sigma_squared, weights):
+        h = self.topology[1]  # number hidden neurons
+        d = self.topology[0]
+        part_1 = -1 * ((d * h + h + 2) / 2) * np.log(sigma_squared)
         part_2 = 1 / (2 * sigma_squared) * (sum(np.square(weights)))
         log_loss = part_1 - part_2
         return log_loss
@@ -210,13 +211,15 @@ class Replica(multiprocessing.Process):
     def gaussian_likelihood(neural_network, data, weights, tausq, temperature):
         desired = data[:, neural_network.topology[0]: neural_network.topology[0] + neural_network.topology[2]]
         prediction = neural_network.generate_output(data, weights)
-        rmse = Replica.calculate_rmse(prediction, desired)
+        rmse = Network.calculate_rmse(prediction, desired)
         loss = -0.5 * np.log(2 * np.pi * tausq) - 0.5 * np.square(desired - prediction) / tausq
         return [np.sum(loss)/temperature, rmse]
 
-    @staticmethod
-    def gaussian_prior(sigma_squared, nu_1, nu_2, weights, tausq):
-        part1 = -1 * (weights.shape[0] / 2) * np.log(sigma_squared)
+
+    def gaussian_prior(self, sigma_squared, nu_1, nu_2, weights, tausq):
+        h = self.topology[1]  # number hidden neurons
+        d = self.topology[0]
+        part1 = -1 * ((d * h + h + 2) / 2) * np.log(sigma_squared)
         part2 = 1 / (2 * sigma_squared) * (sum(np.square(weights)))
         log_loss = part1 - part2 - (1 + nu_1) * np.log(tausq) - (nu_2 / tausq)
         return log_loss
@@ -234,7 +237,11 @@ class Replica(multiprocessing.Process):
             loss = self.gaussian_prior(self.sigma_squared, self.nu_1, self.nu_2, weights, tau)
         elif self.problem_type == 'classification':
             loss = self.classification_prior(self.sigma_squared, weights)
-        return loss
+        try:
+            return loss
+        except Exception as e:
+            print(self.problem_type)
+            raise(e)
 
     def evaluate_proposal(self, neural_network, train_data, test_data, weights_proposal, tau_proposal, likelihood_current, prior_current):
         accept = False
@@ -261,7 +268,7 @@ class Replica(multiprocessing.Process):
         if self.problem_type == 'classification':
             train_acc_file = open(self.directory+'/train_acc_'+str(self.temperature)+'.csv', 'w')
             test_acc_file = open(self.directory+'/test_acc_'+str(self.temperature)+'.csv', 'w')
-        weights_initial = np.random.uniform(-5, 5, self.w_size)
+        weights_initial = np.random.randn(self.w_size)
 
         # ------------------- initialize MCMC
         self.start_time = time.time()
@@ -350,18 +357,26 @@ class Replica(multiprocessing.Process):
                     print("Khali")
                 self.event.clear()
             elapsed_time = ":".join(Replica.convert_time(time.time() - self.start_time))
+            fx = self.neural_network.generate_output(self.train_data, weights_current)
+            y = self.train_data[:, self.neural_network.topology[0]: self.neural_network.topology[0] + self.neural_network.topology[2]]
+            acc_train_current = Network.calculate_accuracy(fx,y)
 
-            # print("Temperature: {:.2f} Sample: {:d}, Best Fitness: {:.4f}, Proposal: {:.4f}, Time Elapsed: {:s}".format(self.temperature, sample, rmse_train_current, rmse_train, elapsed_time))
+            if self.problem_type == 'regression':
+                print("Temperature: {:.2f} Sample: {:d}, Best Fitness: {:.4f}, Accuracy: {:.4f}, Time Elapsed: {:s}".format(self.temperature, sample, rmse_train_current, acc_train_current, elapsed_time))
+            else:
+                print("Temperature: {:.2f} Sample: {:d}, Best Fitness: {:.4f}, Proposal: {:.4f}, Time Elapsed: {:s}".format(self.temperature, sample, acc_train_current, acc_train, elapsed_time))
 
         elapsed_time = time.time() - self.start_time
-        accept_ratio = num_accept/num_samples
+        accept_ratio = num_accept/num_samples * 100
 
         # Close the files
         train_rmse_file.close()
         test_rmse_file.close()
-        train_acc_file.close()
-        test_acc_file.close()
-        print("Temperature: {} Done!".format(self.temperature))
+        if self.problem_type == 'classification':
+            train_acc_file.close()
+            test_acc_file.close()
+        print("Temperature: {} Done! with accept ratio: {}".format(self.temperature, accept_ratio))
+
 
 class ParallelTempering(object):
 
@@ -669,8 +684,9 @@ class ParallelTempering(object):
         burn_in = int(self.num_samples*self.burn_in)
         rmse_train = np.zeros((self.num_chains,self.num_samples - burn_in))
         rmse_test = np.zeros((self.num_chains,self.num_samples - burn_in))
-        acc_train = np.zeros((self.num_chains,self.num_samples - burn_in))
-        acc_test = np.zeros((self.num_chains,self.num_samples - burn_in))
+        if self.problem_type == 'classification':
+            acc_train = np.zeros((self.num_chains,self.num_samples - burn_in))
+            acc_test = np.zeros((self.num_chains,self.num_samples - burn_in))
         accept_ratio = np.zeros((self.num_chains,1))
 
         for i in range(self.num_chains):
@@ -683,28 +699,24 @@ class ParallelTempering(object):
             dat = np.genfromtxt(file_name, delimiter=',')
             rmse_train[i,:] = dat[burn_in:]
 
-            file_name = self.path+'/test_acc_'+ str(self.temperatures[i])+ '.csv'
-            dat = np.genfromtxt(file_name, delimiter=',')
-            acc_test[i,:] = dat[burn_in:]
+            if self.problem_type == 'classification':
+                file_name = self.path+'/test_acc_'+ str(self.temperatures[i])+ '.csv'
+                dat = np.genfromtxt(file_name, delimiter=',')
+                acc_test[i,:] = dat[burn_in:]
 
-            file_name = self.path+'/train_acc_'+ str(self.temperatures[i])+ '.csv'
-            dat = np.genfromtxt(file_name, delimiter=',')
-            acc_train[i,:] = dat[burn_in:]
+                file_name = self.path+'/train_acc_'+ str(self.temperatures[i])+ '.csv'
+                dat = np.genfromtxt(file_name, delimiter=',')
+                acc_train[i,:] = dat[burn_in:]
 
         rmse_train = rmse_train.reshape(self.num_chains*(self.num_samples - burn_in), 1)
         rmse_test = rmse_test.reshape(self.num_chains*(self.num_samples - burn_in), 1)
-        acc_train = acc_train.reshape(self.num_chains*(self.num_samples - burn_in), 1)
-        acc_test = acc_test.reshape(self.num_chains*(self.num_samples - burn_in), 1)
+        if self.problem_type == 'classification':
+            acc_train = acc_train.reshape(self.num_chains*(self.num_samples - burn_in), 1)
+            acc_test = acc_test.reshape(self.num_chains*(self.num_samples - burn_in), 1)
 
         plt.plot(rmse_train[:self.num_samples - burn_in])
         plt.xlabel('samples')
         plt.ylabel('RMSE')
-        plt.show()
-        plt.clf()
-
-        plt.plot(acc_train[:self.num_samples - burn_in])
-        plt.xlabel('samples')
-        plt.ylabel('Accuracy')
         plt.show()
         plt.clf()
 
@@ -720,22 +732,34 @@ class ParallelTempering(object):
         plt.show()
         plt.clf()
 
-        plt.plot(acc_test[:self.num_samples - burn_in])
-        plt.xlabel('samples')
-        plt.ylabel('Accuracy')
-        plt.show()
-        plt.clf()
-
-
         plt.plot(rmse_test)
         plt.xlabel('samples')
         plt.ylabel('RMSE')
         plt.show()
+        plt.clf()
+
+
+        if self.problem_type == 'classification':
+            plt.plot(acc_train[:self.num_samples - burn_in])
+            plt.xlabel('samples')
+            plt.ylabel('Accuracy')
+            plt.show()
+            plt.clf()
+
+            plt.plot(acc_test[:self.num_samples - burn_in])
+            plt.xlabel('samples')
+            plt.ylabel('Accuracy')
+            plt.show()
+            plt.clf()
 
         print("NUMBER OF SWAPS MAIN =", total_swaps_main)
         print("SWAP ACCEPTANCE = ", self.num_swap*100/self.total_swap_proposals," %")
         print("SWAP ACCEPTANCE MAIN = ", swaps_appected_main*100/total_swaps_main," %")
-        return (rmse_train, rmse_test, acc_train, acc_test)
+
+        if self.problem_type == 'classification':
+            return (rmse_train, rmse_test, acc_train, acc_test)
+
+        return (rmse_train, rmse_test)
 
 def make_directory(path):
     if not os.path.isdir(path):
@@ -743,7 +767,7 @@ def make_directory(path):
 
 if __name__ == '__main__':
     # Select problem
-    problem = 4
+    problem = 3
 
     if problem == 1:
         # Synthetic
@@ -785,12 +809,12 @@ if __name__ == '__main__':
 
     elif problem == 3:
         #Iris
-        num_samples = 40000
+        num_samples = 80000
         population_size = 100
         burn_in = 0.2
         num_chains = 10
         max_temp = 20
-        swap_interval = 100
+        swap_interval = 80
         problem_type = 'classification'
         topology = [4, 15, 3]
         problem_name = 'Iris'
@@ -804,39 +828,72 @@ if __name__ == '__main__':
 
     elif problem == 4:
         #Ions
-        num_samples = 40000
-        population_size = 200
+        num_samples = 80000
+        # population_size = 200
         burn_in = 0.2
-        num_chains = 10
-        max_temp = 20
-        swap_interval = 100
+        num_chains = 12
+        max_temp = 25
+        swap_interval = 80
         problem_type = 'classification'
         topology = [34, 50, 2]
         problem_name = 'Ionosphere'
-        path = 'results/Ions' + str(num_chains) + '_' + str(max_temp)
+        path = 'results_rw/Ions' + str(num_chains) + '_' + str(max_temp)
 
-        train_data_file = '../Datasets/Ions/ftrain.csv'
-        test_data_file = '../Datasets/Ions/ftest.csv'
+        train_data_file = '../Datasets/Ions/train.csv'
+        test_data_file = '../Datasets/Ions/test.csv'
 
         train_data = np.genfromtxt(train_data_file, delimiter=',')
         test_data = np.genfromtxt(test_data_file, delimiter=',')
 
+    elif problem == 5:
+        #Cancer
+        num_samples = 2000
+        population_size = 50
+        burn_in = 0.2
+        num_chains = 1
+        max_temp = 25
+        swap_interval = 100
+        problem_type = 'classification'
+        topology = [9, 12, 2]
+        problem_name = 'Cancer'
+        path = 'results/Cancer' + str(num_chains) + '_' + str(max_temp)
+
+        train_data_file = '../Datasets/Cancer/ftrain.txt'
+        test_data_file = '../Datasets/Cancer/ftest.txt'
+
+        train_data = np.genfromtxt(train_data_file)
+        test_data = np.genfromtxt(test_data_file)
+
     model = ParallelTempering(burn_in, train_data, test_data, topology, num_chains, max_temp, num_samples, swap_interval, path, problem_type=problem_type)
     model.initialize_chains()
-    rmse_train, rmse_test, acc_train, acc_test = model.run_chains()
-    print("Combined Result: ")
-    print("Train RMSE: ", rmse_train.mean(), "std: ", rmse_train.std())
-    print("Test RMSE: ", rmse_test.mean(), "std: ", rmse_test.std())
-    print("Train Accuracy: ", acc_train.mean(), "std: ", acc_train.std())
-    print("Test Accuracy: ", acc_test.mean(), "std: ", acc_test.std())
-    num_samples = int(num_samples/num_chains)
-    burn_in = int(burn_in*num_samples)
-    rmse_train = rmse_train[: num_samples - burn_in]
-    rmse_test = rmse_test[: num_samples - burn_in]
-    acc_train = acc_train[: num_samples - burn_in]
-    acc_test = acc_test[: num_samples - burn_in]
-    print("\nMain Chain Result: ")
-    print("Train RMSE: ", rmse_train.mean(), "std: ", rmse_train.std())
-    print("Test RMSE: ", rmse_test.mean(), "std: ", rmse_test.std())
-    print("Train Accuracy: ", acc_train.mean(), "std: ", acc_train.std())
-    print("Test Accuracy: ", acc_test.mean(), "std: ", acc_test.std())
+    if problem_type == 'classification':
+        rmse_train, rmse_test, acc_train, acc_test = model.run_chains()
+        print("Combined Result: ")
+        print("Train RMSE: ", rmse_train.mean(), "std: ", rmse_train.std())
+        print("Test RMSE: ", rmse_test.mean(), "std: ", rmse_test.std())
+        print("Train Accuracy: ", acc_train.mean(), "std: ", acc_train.std())
+        print("Test Accuracy: ", acc_test.mean(), "std: ", acc_test.std())
+        num_samples = int(num_samples/num_chains)
+        burn_in = int(burn_in*num_samples)
+        rmse_train = rmse_train[: num_samples - burn_in]
+        rmse_test = rmse_test[: num_samples - burn_in]
+        acc_train = acc_train[: num_samples - burn_in]
+        acc_test = acc_test[: num_samples - burn_in]
+        print("\nMain Chain Result: ")
+        print("Train RMSE: ", rmse_train.mean(), "std: ", rmse_train.std())
+        print("Test RMSE: ", rmse_test.mean(), "std: ", rmse_test.std())
+        print("Train Accuracy: ", acc_train.mean(), "std: ", acc_train.std())
+        print("Test Accuracy: ", acc_test.mean(), "std: ", acc_test.std())
+
+    else:
+        rmse_train, rmse_test = model.run_chains()
+        print("Combined Result: ")
+        print("Train RMSE: ", rmse_train.mean(), "std: ", rmse_train.std())
+        print("Test RMSE: ", rmse_test.mean(), "std: ", rmse_test.std())
+        num_samples = int(num_samples/num_chains)
+        burn_in = int(burn_in*num_samples)
+        rmse_train = rmse_train[: num_samples - burn_in]
+        rmse_test = rmse_test[: num_samples - burn_in]
+        print("\nMain Chain Result: ")
+        print("Train RMSE: ", rmse_train.mean(), "std: ", rmse_train.std())
+        print("Test RMSE: ", rmse_test.mean(), "std: ", rmse_test.std())
