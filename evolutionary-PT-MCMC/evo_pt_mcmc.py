@@ -8,6 +8,7 @@ import time
 import math
 import random
 import os
+import sys
 
 
 # --------------------------------------------- Basic Neural Network Class ---------------------------------------------
@@ -569,8 +570,12 @@ class Replica(G3PCX, multiprocessing.Process):
             tau_proposal = np.exp(eta_proposal)
             if self.problem_type == 'classification':
                 accept, rmse_train, rmse_test, acc_train, acc_test, likelihood, prior = self.evaluate_proposal(self.neural_network, self.train_data, self.test_data, weights_proposal, tau_proposal, likelihood, prior)
+                #print rmse_train, rmse_test, acc_train, acc_test, sample 
+
             else:
                 accept, rmse_train, rmse_test, likelihood, prior = self.evaluate_proposal(self.neural_network, self.train_data, self.test_data, weights_proposal, tau_proposal, likelihood, prior)
+
+            
 
             if accept:
                 num_accept += 1
@@ -582,6 +587,8 @@ class Replica(G3PCX, multiprocessing.Process):
                 if self.problem_type == 'classification':
                     acc_train_current = acc_train
                     acc_test_current = acc_test
+
+                print acc_train, sample
 
             if save_knowledge:
                 train_rmse_file.write(str(rmse_train_current)+"\n")
@@ -874,6 +881,9 @@ class EvolutionaryParallelTempering(object):
         start = 0
         end = self.num_samples-1
         print("Num Samples: {}".format(self.num_samples))
+
+
+
         number_exchange = np.zeros(self.num_chains)
         filen = open(self.path + '/num_exchange.txt', 'a')
         #RUN MCMC CHAINS
@@ -970,25 +980,29 @@ class EvolutionaryParallelTempering(object):
         plt.plot(rmse_train[:self.num_samples - burn_in])
         plt.xlabel('samples')
         plt.ylabel('RMSE')
-        plt.show()
+        #plt.show()
+        plt.savefig(self.path+'/1.png') 
         plt.clf()
 
         plt.plot(rmse_train)
         plt.xlabel('samples')
         plt.ylabel('RMSE')
-        plt.show()
+        plt.savefig(self.path+'/2.png') 
+        #plt.show()
         plt.clf()
 
         plt.plot(rmse_test[:self.num_samples - burn_in])
         plt.xlabel('samples')
         plt.ylabel('RMSE')
-        plt.show()
+        plt.savefig(self.path+'/3.png') 
+        #plt.show()
         plt.clf()
 
         plt.plot(rmse_test)
         plt.xlabel('samples')
         plt.ylabel('RMSE')
-        plt.show()
+        #plt.show()
+        plt.savefig(self.path+'/3.png') 
         plt.clf()
 
 
@@ -996,13 +1010,15 @@ class EvolutionaryParallelTempering(object):
             plt.plot(acc_train[:self.num_samples - burn_in])
             plt.xlabel('samples')
             plt.ylabel('Accuracy')
-            plt.show()
+            plt.savefig(self.path+'/4.png')
+            #plt.show()
             plt.clf()
 
             plt.plot(acc_test[:self.num_samples - burn_in])
             plt.xlabel('samples')
             plt.ylabel('RMSE')
-            plt.show()
+            plt.savefig(self.path+'/5.png')
+            #plt.show()
             plt.clf()
 
         print("NUMBER OF SWAPS MAIN =", total_swaps_main)
@@ -1018,60 +1034,62 @@ def make_directory(path):
     if not os.path.isdir(path):
         os.makedirs(path)
 
+
+        
+
 if __name__ == '__main__':
     # Select problem
-    problem = 3
+
+
+
+
+
+    if(len(sys.argv)!=5):
+        sys.exit('not right input format.  ')
+
+
+
+    problem = int(sys.argv[1])  # get input
+
+    num_chains = int(sys.argv[2])
+
+    population_size = int(sys.argv[3])
+
+    swap_interval = int(sys.argv[4])
+
+    print problem, num_chains, population_size, swap_interval
+
+
+ 
+
+
+    burn_in = 0.4  
+    max_temp = 5 
+
+    separate_flag = False # for further data processing in some problems 
+
 
     if problem == 1:
         # Synthetic
-        num_samples = 40000
-        population_size = 100
-        burn_in = 0.2
-        num_chains = 10
-        max_temp = 20
-        swap_interval = 100
+        num_samples = 5000 
         problem_type = 'regression'
         topology = [4, 25, 1]
         problem_name = 'synthetic'
-        path = 'results/synthetic_' + str(num_chains) + '_' + str(max_temp)
+        #path = 'results/synthetic_' + str(num_chains) + '_' + str(max_temp)
 
         train_data_file = '../Datasets/synthetic_data/target_train.csv'
         test_data_file = '../Datasets/synthetic_data/target_test.csv'
 
         train_data = np.genfromtxt(train_data_file, delimiter=',')
         test_data = np.genfromtxt(test_data_file, delimiter=',')
-
+ 
     elif problem == 2:
-        # UJIndoorLoc
-        num_samples = 100000
-        population_size = 100
-        burn_in = 0.2
-        num_chains = 10
-        max_temp = 20
-        swap_interval = 200
-        problem_type = 'regression'
-        topology = [520, 48, 2]
-        problem_name = 'UJIndoorLoc_0'
-        path = 'results/UJIndoorLoc_0_' + str(num_chains) + '_' + str(max_temp)
-
-        train_data_file = '../UJIndoorLoc/sourceData/0train.csv'
-        test_data_file = '../UJIndoorLoc/sourceData/0test.csv'
-
-        train_data = np.genfromtxt(train_data_file, delimiter=',')[:, :-2]
-        test_data = np.genfromtxt(test_data_file, delimiter=',')[:, :-2]
-
-    elif problem == 3:
         #Iris
-        num_samples = 30000
-        population_size = 50
-        burn_in = 0.2
-        num_chains = 12
-        max_temp = 25
-        swap_interval = 100
+        num_samples = 5000 
         problem_type = 'classification'
-        topology = [4, 15, 3]
+        topology = [4, 10, 3]
         problem_name = 'Iris'
-        path = 'results/Iris' + str(num_chains) + '_' + str(max_temp)
+        #path = 'results/Iris' + str(num_chains) + '_' + str(max_temp)
 
         #train_data_file = '../Datasets/Iris/iris-train.csv'
         #test_data_file = '../Datasets/Iris/iris-test.csv'
@@ -1082,47 +1100,121 @@ if __name__ == '__main__':
         train_data = np.genfromtxt(train_data_file, delimiter=',')
         test_data = np.genfromtxt(test_data_file, delimiter=',')
 
-    elif problem == 4:
+    elif problem == 3:
         #Ions
-        num_samples = 40000
-        population_size = 50
-        burn_in = 0.2
-        num_chains = 12
-        max_temp = 25
-        swap_interval = 100
+        num_samples = 4000  
         problem_type = 'classification'
         topology = [34, 50, 2]
         problem_name = 'Ionosphere'
-        path = 'results/Ions' + str(num_chains) + '_' + str(max_temp)
+        #path = 'results/Ions' + str(num_chains) + '_' + str(max_temp)
 
-        train_data_file = '../Datasets/Ions/ftrain.csv'
-        test_data_file = '../Datasets/Ions/ftest.csv'
+        train_data_file = '../Datasets/data_classification/Ions/ftrain.csv'
+        test_data_file = '../Datasets/data_classification/Ions/ftest.csv'
 
         train_data = np.genfromtxt(train_data_file, delimiter=',')
         test_data = np.genfromtxt(test_data_file, delimiter=',')
 
-    elif problem == 5:
+    elif problem == 4:
         #Cancer
-        num_samples = 40000
-        population_size = 50
-        burn_in = 0.2
-        num_chains = 12
-        max_temp = 25
-        swap_interval = 100
+        num_samples = 5000 
         problem_type = 'classification'
         topology = [9, 12, 2]
         problem_name = 'Cancer'
-        path = 'results/Cancer' + str(num_chains) + '_' + str(max_temp)
+        #path = 'results/Cancer' + str(num_chains) + '_' + str(max_temp)
 
-        train_data_file = '../Datasets/Cancer/ftrain.txt'
-        test_data_file = '../Datasets/Cancer/ftest.txt'
+        train_data_file = '../Datasets/data_classification/Cancer/ftrain.txt'
+        test_data_file = '../Datasets/data_classification/Cancer/ftest.txt'
 
         train_data = np.genfromtxt(train_data_file)
-        test_data = np.genfromtxt(test_data_file)
-        print(train_data.shape)
+        test_data = np.genfromtxt(test_data_file) 
 
-    input("Problem: {}".format(problem_name))
-    model = EvolutionaryParallelTempering(burn_in, train_data, test_data, topology, num_chains, max_temp, num_samples, swap_interval, path, population_size, problem_type=problem_type)
+
+
+    elif problem == 5: #Bank additional
+            data = np.genfromtxt('../Datasets/data_classification/Bank/bank-processed.csv',delimiter=';')
+            classes = data[:,20].reshape(data.shape[0],1)
+            features = data[:,0:20]
+            separate_flag = True
+            problem_name = "bank-additional"
+
+            problem_type = 'classification'
+            hidden = 50
+            ip = 20 #input
+            output = 2
+            num_samples = 5000  
+
+            topology = [ip, hidden, output]
+
+    elif problem == 6: #PenDigit
+            train_data = np.genfromtxt('../Datasets/data_classification/PenDigit/train.csv',delimiter=',')
+            test_data = np.genfromtxt('../Datasets/data_classification/PenDigit/test.csv',delimiter=',')
+            problem_name = "PenDigit"
+
+            problem_type = 'classification'
+
+            for k in range(16):
+                mean_train = np.mean(train_data[:,k])
+                dev_train = np.std(train_data[:,k]) 
+                train_data[:,k] = (train_data[:,k]-mean_train)/dev_train
+                mean_test = np.mean(test_data[:,k])
+                dev_test = np.std(test_data[:,k]) 
+                test_data[:,k] = (test_data[:,k]-mean_test)/dev_test
+            ip = 16
+            hidden = 30
+            output = 10
+
+            num_samples = 5000  
+
+            topology = [ip, hidden, output]
+
+    elif problem == 7: #Chess
+            data  = np.genfromtxt('../Datasets/data_classification/Chess/chess.csv',delimiter=';')
+            classes = data[:,6].reshape(data.shape[0],1)
+            features = data[:,0:6]
+            separate_flag = True
+            problem_name = "chess" 
+            problem_type = 'classification'
+            hidden = 25
+            ip = 6 #input
+            output = 18
+
+            num_samples = 5000 
+
+            topology = [ip, hidden, output]
+
+
+    if separate_flag is True:
+            #Normalizing Data
+            for k in range(ip):
+                mean = np.mean(features[:,k])
+                dev = np.std(features[:,k])
+                features[:,k] = (features[:,k]-mean)/dev
+            train_ratio = 0.7 #Choosable
+            indices = np.random.permutation(features.shape[0])
+            train_data = np.hstack([features[indices[:np.int(train_ratio*features.shape[0])],:],classes[indices[:np.int(train_ratio*features.shape[0])],:]])
+            test_data = np.hstack([features[indices[np.int(train_ratio*features.shape[0])]:,:],classes[indices[np.int(train_ratio*features.shape[0])]:,:]])
+ 
+
+    print train_data
+
+    print test_data
+
+ 
+
+    problemfolder_db = 'Results_/'  # save main results
+
+    run_nb = 0
+    while os.path.exists( problemfolder_db+problem_name+'_%s' % (run_nb)):
+        run_nb += 1
+    if not os.path.exists( problemfolder_db+problem_name+'_%s' % (run_nb)):
+        os.makedirs(  problemfolder_db+problem_name+'_%s' % (run_nb))
+        path_db = (problemfolder_db+ problem_name+'_%s' % (run_nb))
+
+
+    #input("Problem: {}".format(problem_name))
+
+    print ' pt initialize'
+    model = EvolutionaryParallelTempering(burn_in, train_data, test_data, topology, num_chains, max_temp, num_samples, swap_interval, path_db, population_size, problem_type=problem_type)
     model.initialize_chains()
 
     if problem_type == 'classification':
