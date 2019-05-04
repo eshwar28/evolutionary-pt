@@ -7,7 +7,7 @@ import random
 import time
 import math
 import random
-import os
+import os, sys
 
 
 # --------------------------------------------- Basic Neural Network Class ---------------------------------------------
