@@ -17,6 +17,7 @@ parser.add_argument('--max-temp', type=float, default=5, help='Temperature to be
 parser.add_argument('--topology', type=str, default=None, help='String representation of network topology. Eg:- "input,hidden,output"')
 parser.add_argument('--run-id', type=str, default="_".join(str(datetime.now()).split())
 , help="Unique Id to identify run.")
+parser.add_argument('--root', type=str, default=os.path.join(os.getcwd(), '..'), help="path to root directory (evolutionary-pt).")
 
 # PARSE COMMANDLINE ARGUMENTS
 opt = parser.parse_args()
