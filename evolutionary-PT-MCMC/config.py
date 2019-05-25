@@ -18,7 +18,7 @@ parser.add_argument('--max-temp', type=float, default=5, help='Temperature to be
 parser.add_argument('--topology', type=str, default=None, help='String representation of network topology. Eg:- "input,hidden,output"')
 parser.add_argument('--run-id', type=str, default="_".join(str(datetime.now()).split())
 , help="Unique Id to identify run.")
-parser.add_argument('--root', type=str, default=os.path.join(os.getcwd(), '..'), help="path to root directory (evolutionary-pt).")
+parser.add_argument('--root', type=str, default=os.path.split(os.getcwd())[0], help="path to root directory (evolutionary-pt).")
 parser.add_argument('--train-data', type=str, default=None, help='Path to the train data')
 parser.add_argument('--test-data', type=str, default=None, help='Path to the test data')
 parser.add_argument('--config-file', type=str, default=None, help='Path to data config yaml file')
@@ -44,3 +44,7 @@ if opt.num_samples is None:
     opt.num_samples = data_config['num_samples']
 if opt.topology is None:
     opt.topology = data_config['topology']
+
+# ADD REMAINING ARGS FROM CONFIG
+opt.problem_name = data_config['name']
+opt.problem_type = data_config['problem_type']
