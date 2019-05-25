@@ -588,7 +588,7 @@ class Replica(G3PCX, multiprocessing.Process):
                     acc_train_current = acc_train
                     acc_test_current = acc_test
 
-                print acc_train, sample
+                print(acc_train, sample)
 
             if save_knowledge:
                 train_rmse_file.write(str(rmse_train_current)+"\n")
@@ -1057,7 +1057,7 @@ if __name__ == '__main__':
 
     swap_interval = int(sys.argv[4])
 
-    print problem, num_chains, population_size, swap_interval
+    print(problem, num_chains, population_size, swap_interval)
 
 
  
@@ -1195,10 +1195,6 @@ if __name__ == '__main__':
             test_data = np.hstack([features[indices[np.int(train_ratio*features.shape[0])]:,:],classes[indices[np.int(train_ratio*features.shape[0])]:,:]])
  
 
-    print train_data
-
-    print test_data
-
  
 
     problemfolder_db = 'Results_/'  # save main results
@@ -1211,9 +1207,7 @@ if __name__ == '__main__':
         path_db = (problemfolder_db+ problem_name+'_%s' % (run_nb))
 
 
-    #input("Problem: {}".format(problem_name))
-
-    print ' pt initialize'
+    print('pt initialize')
     model = EvolutionaryParallelTempering(burn_in, train_data, test_data, topology, num_chains, max_temp, num_samples, swap_interval, path_db, population_size, problem_type=problem_type)
     model.initialize_chains()
 
