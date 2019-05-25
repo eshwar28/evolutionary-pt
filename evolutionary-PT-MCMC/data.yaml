@@ -5,7 +5,7 @@ synthetic:
   topology: "4,25,1"
   name: synthetic
   train_data: 'synthetic_data/target_train.csv'
-  test_data: 'synthetic_data/targe_test.csv'
+  test_data: 'synthetic_data/target_test.csv'
 
 iris:
   num_samples: 50000
