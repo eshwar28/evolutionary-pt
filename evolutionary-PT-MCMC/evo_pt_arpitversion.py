@@ -1,4 +1,11 @@
-# !/usr/bin/python
+"""
+:---------------------------------------------------------------------------------:
+: Title         : Evolutionary Parallel Tempering using Bayesian Neural Networks  :
+: Author        : Arpit Kapoor (kapoor.arpit97@gmail.com)                         :
+: Organisation  : Centre for Translational Data Science                           :
+:---------------------------------------------------------------------------------:
+"""
+ 
 from __future__ import division
 import matplotlib.pyplot as plt
 import multiprocessing
@@ -8,6 +15,8 @@ import time
 import math
 import random
 import os, sys
+from config import opt
+from pprint import pprint
 
 
 # --------------------------------------------- Basic Neural Network Class ---------------------------------------------
@@ -39,7 +48,8 @@ class Network(object):
         sqerror = np.sum(np.square(error)) / self.topology[2]
         return sqerror
 
-    def calculate_rmse(self, actual, targets):
+    @staticmethod
+    def calculate_rmse(actual, targets):
         return np.sqrt((np.square(np.subtract(np.absolute(actual), np.absolute(targets)))).mean())
 
     def sample_ad(self, actualout):
@@ -110,10 +120,6 @@ class Network(object):
                 count += 1
         accuracy = float(count)/y_out.shape[0] * 100
         return accuracy
-
-    @staticmethod
-    def calculate_rmse(actual, targets):
-        return np.sqrt((np.square(np.subtract(np.absolute(actual), np.absolute(targets)))).mean())
 
     def generate_output(self, data, w):  # BP with SGD (Stocastic BP)
         self.decode(w)  # method to decode w into W1, W2, B1, B2.
@@ -520,7 +526,7 @@ class Replica(G3PCX, multiprocessing.Process):
         [likelihood, rmse_train, acc_train] = self.likelihood_function(self.neural_network, self.train_data, weights_current, tau_proposal, self.temperature)
 
         rmse_test = Network.calculate_rmse(prediction_test, y_test)
-        if problem_type == 'classification':
+        if self.problem_type == 'classification':
             acc_test = Network.calculate_accuracy(prediction_test, y_test)
 
         # save values into previous variables
@@ -538,7 +544,7 @@ class Replica(G3PCX, multiprocessing.Process):
         if save_knowledge:
             train_rmse_file.write(str(rmse_train_current)+"\n")
             test_rmse_file.write(str(rmse_test_current)+"\n")
-            if problem_type == 'classification':
+            if self.problem_type == 'classification':
                 train_acc_file.write(str(acc_train_current)+"\n")
                 test_acc_file.write(str(acc_test_current)+"\n")
                 writ += 1
@@ -552,7 +558,14 @@ class Replica(G3PCX, multiprocessing.Process):
                 if (tag == 0):
                     break
             if tag == 0:
-                break
+                if save_knowledge:
+                    train_rmse_file.write(str(rmse_train_current)+"\n")
+                    test_rmse_file.write(str(rmse_test_current)+"\n")
+                    if self.problem_type == 'classification':
+                        train_acc_file.write(str(acc_train_current)+"\n")
+                        test_acc_file.write(str(acc_test_current)+"\n")
+                        writ += 1
+                continue
             self.find_parents()
             self.sort_population()
             self.replace_parents()
@@ -586,7 +599,7 @@ class Replica(G3PCX, multiprocessing.Process):
             if save_knowledge:
                 train_rmse_file.write(str(rmse_train_current)+"\n")
                 test_rmse_file.write(str(rmse_test_current)+"\n")
-                if problem_type == 'classification':
+                if self.problem_type == 'classification':
                     train_acc_file.write(str(acc_train_current)+"\n")
                     test_acc_file.write(str(acc_test_current)+"\n")
                     writ += 1
@@ -623,37 +636,37 @@ class Replica(G3PCX, multiprocessing.Process):
             print("Temperature: {:.2f} Sample: {:d}, Best Fitness: {:.4f}, Proposal: {:.4f}, Time Elapsed: {:s}".format(self.temperature, sample, rmse_train_current, rmse_train, elapsed_time))
 
         elapsed_time = time.time() - self.start_time
-        accept_ratio = num_accept/num_samples
+        accept_ratio = num_accept/self.num_samples
         print("Written {} values for Accuracies".format(writ))
         # Close the files
         train_rmse_file.close()
         test_rmse_file.close()
-        print("Temperature: {} Done!".format(self.temperature))
+        print("Temperature: {} done, {} samples sampled out of {}".format(self.temperature, sample, self.num_samples))
 
-class EvolutionaryParallelTempering(object):
+class EvoPT(object):
 
-    def __init__(self, burn_in, train_data, test_data, topology, num_chains, max_temp, num_samples, swap_interval, path, population_size, problem_type='regression', geometric=True):
+    def __init__(self, opt, path, geometric=True):
         #FNN Chain variables
-        self.train_data = train_data
-        self.test_data = test_data
-        self.topology = topology
-        self.num_param = (topology[0] * topology[1]) + (topology[1] * topology[2]) + topology[1] + topology[2]
-        self.problem_type = problem_type
+        self.train_data = opt.train_data
+        self.test_data = opt.test_data
+        self.topology = list(map(int,opt.topology.split(',')))
+        self.num_param = (self.topology[0] * self.topology[1]) + (self.topology[1] * self.topology[2]) + self.topology[1] + self.topology[2]
+        self.problem_type = opt.problem_type
         #Parallel Tempering variables
-        self.burn_in = burn_in
-        self.swap_interval = swap_interval
+        self.burn_in = opt.burn_in
+        self.swap_interval = opt.swap_interval
         self.path = path
-        self.max_temp = max_temp
+        self.max_temp = opt.max_temp
         self.num_swap = 0
         self.total_swap_proposals = 0
-        self.num_chains = num_chains
+        self.num_chains = opt.num_chains
         self.chains = []
         self.temperatures = []
-        self.num_samples = int(num_samples/self.num_chains)
+        self.num_samples = int(opt.num_samples/self.num_chains)
         self.geometric = geometric
-        self.population_size = population_size
+        self.population_size = opt.population_size
         # create queues for transfer of parameters between process chain
-        self.parameter_queue = [multiprocessing.Queue() for i in range(num_chains)]
+        self.parameter_queue = [multiprocessing.Queue() for i in range(self.num_chains)]
         self.chain_queue = multiprocessing.JoinableQueue()
         self.wait_chain = [multiprocessing.Event() for i in range (self.num_chains)]
         self.event = [multiprocessing.Event() for i in range (self.num_chains)]
@@ -893,7 +906,7 @@ class EvolutionaryParallelTempering(object):
             for index in range(self.num_chains):
                 if not self.chains[index].is_alive():
                     count+=1
-                    print(str(self.chains[index].temperature) +" Dead")
+                    print("Temp {} Dead".format(self.chains[index].temperature))
 
             if count == self.num_chains:
                 break
@@ -931,7 +944,9 @@ class EvolutionaryParallelTempering(object):
         #JOIN THEM TO MAIN PROCESS
         for index in range(0,self.num_chains):
             self.chains[index].join()
+            print("Chain {} joined".format(index))
         self.chain_queue.join()
+        print("Done")
 
         #GETTING DATA
         burn_in = int(self.num_samples*self.burn_in)
@@ -1019,137 +1034,28 @@ def make_directory(path):
         os.makedirs(path)
 
 if __name__ == '__main__':
-    # Select problem
-    problem = 5
 
-    if problem == 1:
-        # Synthetic
-        num_samples = 40000
-        population_size = 100
-        burn_in = 0.2
-        num_chains = 10
-        max_temp = 20
-        swap_interval = 100
-        problem_type = 'regression'
-        topology = [4, 25, 1]
-        problem_name = 'synthetic'
-        path = 'results/synthetic_' + str(num_chains) + '_' + str(max_temp)
+    print(opt)
+    
+    # CREATE RESULTS DIRECTORY
+    make_directory('Results')
+    results_dir = os.path.join('Results', '{}_{}'.format(opt.problem, opt.run_id))
+    make_directory(results_dir)
 
-        train_data_file = '../Datasets/synthetic_data/target_train.csv'
-        test_data_file = '../Datasets/synthetic_data/target_test.csv'
+    # READ DATA
+    data_path = os.path.join(opt.root, 'Datasets')
+    opt.train_data = np.genfromtxt(os.path.join(data_path, opt.train_data), delimiter=',')
+    opt.test_data = np.genfromtxt(os.path.join(data_path, opt.test_data), delimiter=',')
 
-        train_data = np.genfromtxt(train_data_file, delimiter=',')
-        test_data = np.genfromtxt(test_data_file, delimiter=',')
 
-    elif problem == 2:
-        # UJIndoorLoc
-        num_samples = 100000
-        population_size = 100
-        burn_in = 0.2
-        num_chains = 10
-        max_temp = 20
-        swap_interval = 200
-        problem_type = 'regression'
-        topology = [520, 48, 2]
-        problem_name = 'UJIndoorLoc_0'
-        path = 'results/UJIndoorLoc_0_' + str(num_chains) + '_' + str(max_temp)
+    # CREATE EVOLUTIONARY PT CLASS
+    evo_pt = EvoPT(opt, results_dir)
+    
+    # INITIALIZE PT CHAINS
+    evo_pt.initialize_chains()
 
-        train_data_file = '../UJIndoorLoc/sourceData/0train.csv'
-        test_data_file = '../UJIndoorLoc/sourceData/0test.csv'
-
-        train_data = np.genfromtxt(train_data_file, delimiter=',')[:, :-2]
-        test_data = np.genfromtxt(test_data_file, delimiter=',')[:, :-2]
-
-    elif problem == 3:
-        #Iris
-        num_samples = 30000
-        population_size = 50
-        burn_in = 0.2
-        num_chains = 12
-        max_temp = 25
-        swap_interval = 100
-        problem_type = 'classification'
-        topology = [4, 15, 3]
-        problem_name = 'Iris'
-        path = 'results/Iris' + str(num_chains) + '_' + str(max_temp)
-
-        train_data_file = '../Datasets/Iris/iris-train.csv'
-        test_data_file = '../Datasets/Iris/iris-test.csv'
-
-        train_data = np.genfromtxt(train_data_file, delimiter=',')
-        test_data = np.genfromtxt(test_data_file, delimiter=',')
-
-    elif problem == 4:
-        #Ions
-        num_samples = 40000
-        population_size = 50
-        burn_in = 0.2
-        num_chains = 12
-        max_temp = 25
-        swap_interval = 100
-        problem_type = 'classification'
-        topology = [34, 50, 2]
-        problem_name = 'Ionosphere'
-        path = 'results/Ions' + str(num_chains) + '_' + str(max_temp)
-
-        train_data_file = '../Datasets/Ions/ftrain.csv'
-        test_data_file = '../Datasets/Ions/ftest.csv'
-
-        train_data = np.genfromtxt(train_data_file, delimiter=',')
-        test_data = np.genfromtxt(test_data_file, delimiter=',')
-
-    elif problem == 5:
-        #Cancer
-        num_samples = 40000
-        population_size = 50
-        burn_in = 0.2
-        num_chains = 12
-        max_temp = 25
-        swap_interval = 100
-        problem_type = 'classification'
-        topology = [9, 12, 2]
-        problem_name = 'Cancer'
-        path = 'results/Cancer' + str(num_chains) + '_' + str(max_temp)
-
-        train_data_file = '../Datasets/Cancer/ftrain.txt'
-        test_data_file = '../Datasets/Cancer/ftest.txt'
-
-        train_data = np.genfromtxt(train_data_file)
-        test_data = np.genfromtxt(test_data_file)
-        print(train_data.shape)
-
-    input("Problem: {}".format(problem_name))
-    model = EvolutionaryParallelTempering(burn_in, train_data, test_data, topology, num_chains, max_temp, num_samples, swap_interval, path, population_size, problem_type=problem_type)
-    model.initialize_chains()
-
-    if problem_type == 'classification':
-        rmse_train, rmse_test, acc_train, acc_test = model.run_chains()
-        print("Combined Result: ")
-        print("Train RMSE: ", rmse_train.mean(), "std: ", rmse_train.std())
-        print("Test RMSE: ", rmse_test.mean(), "std: ", rmse_test.std())
-        print("Train Accuracy: ", acc_train.mean(), "std: ", acc_train.std())
-        print("Test Accuracy: ", acc_test.mean(), "std: ", acc_test.std())
-        num_samples = int(num_samples/num_chains)
-        burn_in = int(burn_in*num_samples)
-        rmse_train = rmse_train[: num_samples - burn_in]
-        rmse_test = rmse_test[: num_samples - burn_in]
-        acc_train = acc_train[: num_samples - burn_in]
-        acc_test = acc_test[: num_samples - burn_in]
-        print("\nMain Chain Result: ")
-        print("Train RMSE: ", rmse_train.mean(), "std: ", rmse_train.std())
-        print("Test RMSE: ", rmse_test.mean(), "std: ", rmse_test.std())
-        print("Train Accuracy: ", acc_train.mean(), "std: ", acc_train.std())
-        print("Test Accuracy: ", acc_test.mean(), "std: ", acc_test.std())
-
-    else:
-        rmse_train, rmse_test = model.run_chains()
-        print("Combined Result: ")
-        print("Train RMSE: ", rmse_train.mean(), "std: ", rmse_train.std())
-        print("Test RMSE: ", rmse_test.mean(), "std: ", rmse_test.std())
-        num_samples = int(num_samples/num_chains)
-        burn_in = int(burn_in*num_samples)
-        rmse_train = rmse_train[: num_samples - burn_in]
-        rmse_test = rmse_test[: num_samples - burn_in]
-        print("\nMain Chain Result: ")
-        print("Train RMSE: ", rmse_train.mean(), "std: ", rmse_train.std())
-        print("Test RMSE: ", rmse_test.mean(), "std: ", rmse_test.std())
+    # RUN EVO PT
+    if opt.problem_type == 'classification':
+        rmse_train, rmse_test, acc_train, acc_test = evo_pt.run_chains()
+    elif opt.problem_type == 'regression':
+        rmse_train, rmse_test = evo_pt.run_chains()
