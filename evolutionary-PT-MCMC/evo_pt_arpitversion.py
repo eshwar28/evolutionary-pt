@@ -1,9 +1,10 @@
 """
-:---------------------------------------------------------------------------------:
-: Title         : Evolutionary Parallel Tempering using Bayesian Neural Networks  :
-: Author        : Arpit Kapoor (kapoor.arpit97@gmail.com)                         :
-: Organisation  : Centre for Translational Data Science                           :
-:---------------------------------------------------------------------------------:
+:-----------------------------------------------------------------------------------:
+: Title         : Evolutionary Parallel Tempering using Bayesian Neural Networks    :
+: Author        : Arpit Kapoor (kapoor.arpit97@gmail.com)                           :
+: Guided By     : Dr Rohitash Chandra (rohitash.chandra@sydney.edu.au)              :
+: Organisation  : Centre for Translational Data Science                             :
+:-----------------------------------------------------------------------------------:
 """
  
 from __future__ import division
@@ -1036,7 +1037,7 @@ def make_directory(path):
 if __name__ == '__main__':
 
     print(opt)
-    
+
     # CREATE RESULTS DIRECTORY
     make_directory('Results')
     results_dir = os.path.join('Results', '{}_{}'.format(opt.problem, opt.run_id))
