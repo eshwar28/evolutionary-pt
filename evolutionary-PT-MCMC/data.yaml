@@ -31,6 +31,14 @@ cancer:
   train_data: 'data_classification/Cancer/ftrain.txt'
   test_data: 'data_classification/Cancer/ftest.txt'
 
+TicTacToe:
+  num_samples: 50000
+  problem_type: classification
+  topology: "9,15,2"
+  name: TicTacToe
+  train_data: 'data_classification/TicTacToe/ftrain.csv'
+  test_data: 'data_classification/TicTacToe/ftest.csv'
+
 bank:
   num_samples: 35000
   problem_type: classification

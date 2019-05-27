@@ -8,7 +8,7 @@ import yaml
 parser = argparse.ArgumentParser(description='Run Evolutionary Parallel Tempering')
 
 # ADD ARGUMENTS TO THE PARSER
-parser.add_argument('--problem', type=str, default='synthetic', help='Problem to be used for Evolutionary PT: \n"synthetic", "iris", "ions", "cancer", "bank", "penDigit", "chess"')
+parser.add_argument('--problem', type=str, default='synthetic', help='Problem to be used for Evolutionary PT: \n"synthetic", "iris", "ions", "cancer", "bank", "penDigit", "chess", "TicTacToe')
 parser.add_argument('--num-chains', type=int, default=mp.cpu_count()-2, help='Number of Chains for Parallel Tempering')
 parser.add_argument('--population-size', type=int, default=200, help='Population size for G3PCX Evolutionary algorithm.')
 parser.add_argument('--num-samples', type=int, default=None, help='Total number of samples (all chains combined).')

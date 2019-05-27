@@ -30,6 +30,6 @@ np.savetxt('ftest.csv', testdata, delimiter=',')
 np.savetxt('ftrain.csv', traindata, delimiter=',')
 
 
-print traindata
+print(traindata)
 
-print testdata
+print(testdata)
