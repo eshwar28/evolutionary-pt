@@ -1,11 +1,8 @@
 
 #!/bin/sh 
-echo Running all 	 
- 
- 
+echo Running all problems.
 
-for prob in   3 4 5 6 7
+for prob in  'iris' 'cancer' 'ions' 'penDigit'
 	do
-	python evo_pt_mcmc.py $prob 10 100 10  
-
+	python evo_pt_mcmc.py --problem $prob 
 done
