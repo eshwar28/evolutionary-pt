@@ -1,5 +1,4 @@
+Datasets
 */Results
-*.csv
 *__pycache__
-*.txt
 *.pyc

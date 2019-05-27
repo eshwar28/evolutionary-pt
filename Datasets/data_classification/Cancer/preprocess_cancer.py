@@ -25,5 +25,5 @@ for index in range(traindata.shape[0]):
 
 
 
-np.savetxt('ftest.txt', testdataf)
-np.savetxt('ftrain.txt', traindataf)
+np.savetxt('ftest.txt', testdataf, delimiter=',')
+np.savetxt('ftrain.txt', traindataf, delimiter=',')

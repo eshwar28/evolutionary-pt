@@ -1036,8 +1036,6 @@ def make_directory(path):
 
 if __name__ == '__main__':
 
-    print(opt)
-
     # CREATE RESULTS DIRECTORY
     make_directory('Results')
     results_dir = os.path.join('Results', '{}_{}'.format(opt.problem, opt.run_id))
