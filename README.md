@@ -7,7 +7,7 @@ Python implementation of the algorithm is available [here](https://github.com/ro
 ## Running Evolutionary Parallel Tempering
 ```
     cd evolutionary-PT-MCMC
-    python evo-pt-mcmc.py --problem <problem-name>
+    python evo_pt_mcmc.py --problem <problem-name>
 ```
 
 The script supports following additional command line arguments:
@@ -26,7 +26,7 @@ Run Evolutionary Parallel Tempering
 optional arguments:
   -h, --help            show this help message and exit
   --problem PROBLEM     Problem to be used for Evolutionary PT: "synthetic",
-                        "iris", "ions", "cancer", "bank", "penDigit", "chess"
+                        "iris", "ions", "cancer", "bank", "penDigit", "chess", "TicTacToe"
   --num-chains NUM_CHAINS
                         Number of Chains for Parallel Tempering
   --population-size POPULATION_SIZE
