@@ -235,3 +235,27 @@ class G3PCX(object):
         print(self.sub_pop, '  sub_pop')
         print(self.population[self.best_index], ' best sol')
         print(self.fitness[self.best_index], ' fitness')
+
+if __name__ == '__main__':
+    
+    # OUTPUT FILE FOR POPULATION
+    outfile=open('pop_.txt','w')
+    
+    # STOPPING FITNESS VALUE
+    MinCriteria = 0.005
+    
+    # SET SEED VALUE
+    random.seed(time.time())
+    
+    # EVOLUTION PARAMETERS
+    max_evals = 700000
+    pop_size =  100
+    num_varibles = 5
+    max_limits = np.repeat(5, num_varibles)
+    min_limits = np.repeat(-5, num_varibles)
+
+    # INITIALIZE CLASS OBJECT
+    g3pcx  = G3PCX(pop_size, num_varibles, max_limits, min_limits, max_evals)
+    
+    # EVOLVE
+    g3pcx.evolve(outfile)
