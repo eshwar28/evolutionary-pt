@@ -13,7 +13,7 @@ def load_data(filename):
     y = pd.get_dummies(df["y"])["yes"].values.astype("float32")
     # Numerical inputs
     X = df[cols_numerical]
-    X = (X - X.min(axis=0)) / (X.max(axis=0) - X.min(axis=0))
+    X = (X - X.mean(axis=0)) / X.std(axis=0)
     # Categorical inputs
     for name in cols_categorical:
         X = pd.concat((X, pd.get_dummies(df[name])), axis=1)
@@ -21,4 +21,4 @@ def load_data(filename):
 
 X, y = load_data("./bank.csv")
 print("X:{}, y:{}".format(X.shape, y.shape))
-np.savetxt('bank-processed.csv',np.hstack((X,y)),delimiter=';')
+np.savetxt('bank-processed.csv',np.hstack((X,y)),delimiter=',')
