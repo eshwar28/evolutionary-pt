@@ -60,5 +60,5 @@ Following Datasets are provided:
 3. [Breast Cancer](https://archive.ics.uci.edu/ml/datasets/breast+cancer+wisconsin+%28original%29)
 4. [Pen Digit](https://archive.ics.uci.edu/ml/datasets/Pen-Based+Recognition+of+Handwritten+Digits)
 5. [Chess]()
-6. [Bank]()
+6. [Bank Marketing](https://archive.ics.uci.edu/ml/datasets/bank+marketing)
 7. [Tic Tac Toe](https://archive.ics.uci.edu/ml/datasets/Tic-Tac-Toe+Endgame)
