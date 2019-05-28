@@ -40,12 +40,12 @@ TicTacToe:
   test_data: 'data_classification/TicTacToe/ftest.csv'
 
 bank:
-  num_samples: 35000
+  num_samples: 55000
   problem_type: classification
-  topology: "20,30,2"
+  topology: "51,90,2"
   name: bank
-  train_data: 'data_classification/bank/train.csv'
-  test_data: 'data_classification/bank/test.csv'
+  train_data: 'data_classification/Bank/train.csv'
+  test_data: 'data_classification/Bank/test.csv'
 
 penDigit:
   num_samples: 45000

@@ -253,17 +253,14 @@ class Replica(G3PCX, multiprocessing.Process):
                     train_acc_file.write(str(acc_train_current)+"\n")
                     test_acc_file.write(str(acc_test_current)+"\n")
                     writ += 1
-                    # print(writ, acc_test_current, "writing acc")
 
             #SWAPPING PREP
-            # print sample
             if (sample % self.swap_interval == 0 and sample != 0 ):
                 # print('\nTemperature: {} Swapping weights: {}'.format(self.temperature, weights_current[:2]))
                 param = np.concatenate([weights_current, np.asarray([eta]).reshape(1), np.asarray([likelihood*self.temperature]),np.asarray([self.temperature])])
                 self.parameter_queue.put(param)
                 self.signal_main.set()
                 self.event.wait()
-                # print(sample, self.temperature)
                 # retrieve parameters fom queues if it has been swapped
                 if not self.parameter_queue.empty() :
                     try:
