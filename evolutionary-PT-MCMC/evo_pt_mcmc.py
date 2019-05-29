@@ -152,11 +152,11 @@ class Replica(G3PCX, multiprocessing.Process):
 
     def run(self):
         save_knowledge = True
-        train_rmse_file = open(self.directory+'/train_rmse_'+str(self.temperature)+'.csv', 'w')
-        test_rmse_file = open(self.directory+'/test_rmse_'+str(self.temperature)+'.csv', 'w')
+        train_rmse_file = open(os.path.join(self.directory, 'train_rmse_{:.4f}.csv'.format(self.temperature)), 'w')
+        test_rmse_file = open(os.path.join(self.directory, 'test_rmse_{:.4f}.csv'.format(self.temperature)), 'w')
         if self.problem_type == 'classification':
-            train_acc_file = open(self.directory+'/train_acc_'+str(self.temperature)+'.csv', 'w')
-            test_acc_file = open(self.directory+'/test_acc_'+str(self.temperature)+'.csv', 'w')
+            train_acc_file = open(os.path.join(self.directory, 'train_acc_{:.4f}.csv'.format(self.temperature)), 'w')
+            test_acc_file = open(os.path.join(self.directory, 'test_acc_{:.4f}.csv'.format(self.temperature)), 'w')
         weights_initial = np.random.uniform(-5, 5, self.w_size)
 
         # ------------------- initialize MCMC
@@ -294,6 +294,7 @@ class EvoPT(object):
 
     def __init__(self, opt, path, geometric=True):
         #FNN Chain variables
+        self.opt = opt
         self.train_data = opt.train_data
         self.test_data = opt.test_data
         self.topology = list(map(int,opt.topology.split(',')))
@@ -465,62 +466,6 @@ class EvoPT(object):
             raise Exception('empty queue')
             return
 
-    def plot_figure(self, list, title):
-
-        list_points =  list
-
-        fname = self.path
-        width = 9
-
-        font = 9
-
-        fig = plt.figure(figsize=(10, 12))
-        ax = fig.add_subplot(111)
-
-
-        slen = np.arange(0,len(list),1)
-
-        fig = plt.figure(figsize=(10,12))
-        ax = fig.add_subplot(111)
-        ax.spines['top'].set_color('none')
-        ax.spines['bottom'].set_color('none')
-        ax.spines['left'].set_color('none')
-        ax.spines['right'].set_color('none')
-        ax.tick_params(labelcolor='w', top='off', bottom='off', left='off', right='off')
-        ax.set_title(' Posterior distribution', fontsize=  font+2)#, y=1.02)
-
-        ax1 = fig.add_subplot(211)
-
-        n, rainbins, patches = ax1.hist(list_points,  bins = 20,  alpha=0.5, facecolor='sandybrown', density=False)
-
-
-        color = ['blue','red', 'pink', 'green', 'purple', 'cyan', 'orange','olive', 'brown', 'black']
-
-        ax1.grid(True)
-        ax1.set_ylabel('Frequency',size= font+1)
-        ax1.set_xlabel('Parameter values', size= font+1)
-
-        ax2 = fig.add_subplot(212)
-
-        list_points = np.asarray(np.split(list_points,  self.num_chains ))
-
-
-
-
-        ax2.set_facecolor('#f2f2f3')
-        ax2.plot( list_points.T , label=None)
-        ax2.set_title(r'Trace plot',size= font+2)
-        ax2.set_xlabel('Samples',size= font+1)
-        ax2.set_ylabel('Parameter values', size= font+1)
-
-        fig.tight_layout()
-        fig.subplots_adjust(top=0.88)
-
-
-        plt.savefig(fname + '/' + title  + '_pos_.png', bbox_inches='tight', dpi=300, transparent=False)
-        plt.clf()
-
-
     def run_chains(self):
         x_test = np.linspace(0,1,num=self.test_data.shape[0])
         x_train = np.linspace(0,1,num=self.train_data.shape[0])
@@ -533,9 +478,6 @@ class EvoPT(object):
         # Define the starting and ending of MCMC Chains
         start = 0
         end = self.num_samples-1
-        print("Num Samples: {}".format(self.num_samples))
-        number_exchange = np.zeros(self.num_chains)
-        filen = open(self.path + '/num_exchange.txt', 'a')
         #RUN MCMC CHAINS
         for index in range(self.num_chains):
             self.chains[index].start_chain = start
@@ -561,7 +503,7 @@ class EvoPT(object):
             timeout_count = 0
             for index in range(0,self.num_chains):
                 print("Waiting for chain: {}".format(index+1))
-                flag = self.wait_chain[index].wait(timeout=5)
+                flag = self.wait_chain[index].wait(timeout=2)
                 if flag:
                     print("Signal from chain: {}".format(index+1))
                     timeout_count += 1
@@ -606,75 +548,83 @@ class EvoPT(object):
 
         for i in range(self.num_chains):
 
-            file_name = self.path+'/test_rmse_'+ str(self.temperatures[i])+ '.csv'
+            file_name = os.path.join(self.path, 'test_rmse_{:.4f}.csv'.format(self.temperatures[i]))
             dat = np.genfromtxt(file_name, delimiter=',')
             rmse_test[i,:] = dat[burn_in:]
 
-            file_name = self.path+'/train_rmse_'+ str(self.temperatures[i])+ '.csv'
+            file_name = os.path.join(self.path, 'train_rmse_{:.4f}.csv'.format(self.temperatures[i]))
             dat = np.genfromtxt(file_name, delimiter=',')
             rmse_train[i,:] = dat[burn_in:]
 
             if self.problem_type == 'classification':
-                file_name = self.path+'/test_acc_'+ str(self.temperatures[i])+ '.csv'
+                file_name = os.path.join(self.path, 'test_acc_{:.4f}.csv'.format(self.temperatures[i]))
                 dat = np.genfromtxt(file_name, delimiter=',')
                 acc_test[i,:] = dat[burn_in:]
 
-                file_name = self.path+'/train_acc_'+ str(self.temperatures[i])+ '.csv'
+                file_name = os.path.join(self.path, 'train_acc_{:.4f}.csv'.format(self.temperatures[i]))
                 dat = np.genfromtxt(file_name, delimiter=',')
                 acc_train[i,:] = dat[burn_in:]
 
-        rmse_train = rmse_train.reshape(self.num_chains*(self.num_samples - burn_in), 1)
-        rmse_test = rmse_test.reshape(self.num_chains*(self.num_samples - burn_in), 1)
+        self.rmse_train = rmse_train.reshape(self.num_chains*(self.num_samples - burn_in), 1)
+        self.rmse_test = rmse_test.reshape(self.num_chains*(self.num_samples - burn_in), 1)
         if self.problem_type == 'classification':
-            acc_train = acc_train.reshape(self.num_chains*(self.num_samples - burn_in), 1)
-            acc_test = acc_test.reshape(self.num_chains*(self.num_samples - burn_in), 1)
+            self.acc_train = acc_train.reshape(self.num_chains*(self.num_samples - burn_in), 1)
+            self.acc_test = acc_test.reshape(self.num_chains*(self.num_samples - burn_in), 1)
 
-        plt.plot(rmse_train[:self.num_samples - burn_in])
-        plt.xlabel('samples')
-        plt.ylabel('RMSE')
-        plt.show()
-        plt.clf()
-
-        plt.plot(rmse_train)
-        plt.xlabel('samples')
-        plt.ylabel('RMSE')
-        plt.show()
-        plt.clf()
-
-        plt.plot(rmse_test[:self.num_samples - burn_in])
-        plt.xlabel('samples')
-        plt.ylabel('RMSE')
-        plt.show()
-        plt.clf()
-
-        plt.plot(rmse_test)
-        plt.xlabel('samples')
-        plt.ylabel('RMSE')
-        plt.show()
-        plt.clf()
-
-
-        if self.problem_type == 'classification':
-            plt.plot(acc_train[:self.num_samples - burn_in])
-            plt.xlabel('samples')
-            plt.ylabel('Accuracy')
-            plt.show()
-            plt.clf()
-
-            plt.plot(acc_test[:self.num_samples - burn_in])
-            plt.xlabel('samples')
-            plt.ylabel('RMSE')
-            plt.show()
-            plt.clf()
+        # PLOT THE RESULTS
+        self.plot_figures()
 
         print("NUMBER OF SWAPS MAIN =", total_swaps_main)
         print("SWAP ACCEPTANCE = ", self.num_swap*100/self.total_swap_proposals," %")
         print("SWAP ACCEPTANCE MAIN = ", swaps_appected_main*100/total_swaps_main," %")
 
         if self.problem_type == 'classification':
-            return (rmse_train, rmse_test, acc_train, acc_test)
+            return (self.rmse_train, self.rmse_test, self.acc_train, self.acc_test)
+        return (self.rmse_train, self.rmse_test)
 
-        return (rmse_train, rmse_test)
+
+
+    def plot_figures(self):
+        
+        # X-AXIS 
+        x = np.linspace(0, 1, len(self.rmse_train))
+
+        # PLOT TRAIN RMSE
+        plt.plot(x, self.rmse_train, label='rmse_train')
+        plt.xlabel('samples')
+        plt.ylabel('RMSE')
+        plt.title('{} RMSE Train'.format(self.opt.problem.upper()))
+        plt.legend()
+        plt.savefig(os.path.join(self.path, 'rmse_train.png'))
+        plt.clf()
+
+        # PLOT TEST RMSE
+        plt.plot(x, self.rmse_test, label='rmse_test')
+        plt.xlabel('samples')
+        plt.ylabel('RMSE')
+        plt.title('{} RMSE Test'.format(self.opt.problem.upper()))
+        plt.legend()
+        plt.savefig(os.path.join(self.path, 'rmse_test.png'))
+        plt.clf()
+
+        if self.problem_type == 'classification':
+            # PLOT TRAIN ACCURACY
+            plt.plot(x, self.acc_train, label='acc_train')
+            plt.xlabel('samples')
+            plt.ylabel('Accuracy %')
+            plt.title('{} Accurace Train'.format(self.opt.problem.upper()))
+            plt.legend()
+            plt.savefig(os.path.join(self.path, 'acc_train.png'))
+            plt.clf()
+
+            # PLOT TEST ACCURACY
+            plt.plot(x, self.acc_test, label='acc_test')
+            plt.xlabel('samples')
+            plt.ylabel('Accuracy %')
+            plt.title('{} Accurace Test'.format(self.opt.problem.upper()))
+            plt.legend()
+            plt.savefig(os.path.join(self.path, 'acc_test.png'))
+            plt.clf()
 
 def make_directory(path):
     if not os.path.isdir(path):

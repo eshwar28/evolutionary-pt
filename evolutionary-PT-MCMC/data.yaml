@@ -8,7 +8,7 @@ synthetic:
   test_data: 'synthetic_data/target_test.csv'
 
 iris:
-  num_samples: 50000
+  num_samples: 10000
   problem_type: classification
   topology: "4,10,3"
   name: iris
