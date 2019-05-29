@@ -4,6 +4,26 @@ from datetime import datetime
 import multiprocessing as mp
 import yaml
 
+
+def get_runid(_datetime):
+    """
+    Generate run_id from datetime object
+
+    Parameters
+    ----------
+    _datetime: datetime object
+        Current Date and Time
+
+    Returns
+    -------
+    run_id: str
+        run_id consisting of date and time
+    """
+    date, time = str(_datetime).split()
+    time = time.split('.')[0]
+    run_id = "_".join([date, time])
+    return run_id
+
 # CREATE ARGUMENT PARSER
 parser = argparse.ArgumentParser(description='Run Evolutionary Parallel Tempering')
 
@@ -16,7 +36,7 @@ parser.add_argument('--swap-interval', type=int, default=10, help='Number of sam
 parser.add_argument('--burn-in', type=float, default=0.2, help='Ratio of samples to be discarded as burn-in samples. Value 0.1 means 10 percent samples are discarded')
 parser.add_argument('--max-temp', type=float, default=5, help='Temperature to be assigned to the chain with maximum temperature.')
 parser.add_argument('--topology', type=str, default=None, help='String representation of network topology. Eg:- "input,hidden,output"')
-parser.add_argument('--run-id', type=str, default="_".join(str(datetime.now()).split())
+parser.add_argument('--run-id', type=str, default=get_runid(datetime.now())
 , help="Unique Id to identify run.")
 parser.add_argument('--root', type=str, default=os.path.split(os.getcwd())[0], help="path to root directory (evolutionary-pt).")
 parser.add_argument('--train-data', type=str, default=None, help='Path to the train data')
