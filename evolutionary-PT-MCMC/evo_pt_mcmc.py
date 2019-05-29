@@ -320,6 +320,7 @@ class EvoPT(object):
         self.event = [multiprocessing.Event() for i in range (self.num_chains)]
         make_directory(path)
 
+
     def default_beta_ladder(self, ndim, ntemps, Tmax): #https://github.com/konqr/ptemcee/blob/master/ptemcee/sampler.py
         """
         Returns a ladder of :math:`\beta \equiv 1/T` under a geometric spacing that is determined by the
@@ -636,6 +637,10 @@ if __name__ == '__main__':
     make_directory('Results')
     results_dir = os.path.join('Results', '{}_{}'.format(opt.problem, opt.run_id))
     make_directory(results_dir)
+
+    logfile = os.path.join(results_dir, 'log.txt')
+    with open(logfile, 'w') as stream:
+        stream.write(str(opt))
 
     # READ DATA
     data_path = os.path.join(opt.root, 'Datasets')
