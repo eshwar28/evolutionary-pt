@@ -9,6 +9,7 @@
 from __future__ import division
 import matplotlib.pyplot as plt
 import multiprocessing
+from multiprocessing import Process, Value
 import numpy as np
 import random
 import time
@@ -22,17 +23,20 @@ from network import Network
 from g3pcx import G3PCX
 
 
-class Replica(G3PCX, multiprocessing.Process):
-    def __init__(self, num_samples, burn_in, population_size, topology, train_data, test_data, directory, temperature, swap_interval, parameter_queue, problem_type,  main_process, event, max_limit=(-5), min_limit=5):
+class Replica(G3PCX, Process):
+    def __init__(self, num_samples, burn_in, population_size, topology, train_data, test_data, directory, temperature, swap_sample, parameter_queue, problem_type,  main_process, event, active_chains, max_limit=(-5), min_limit=5):
         # MULTIPROCESSING CLASS CONSTRUCTOR
         multiprocessing.Process.__init__(self)
         self.process_id = temperature
         self.parameter_queue = parameter_queue
         self.signal_main = main_process
         self.event =  event
+        self.active_chains = active_chains
+        self.event.clear()
+        self.signal_main.clear()
         #PARALLEL TEMPERING VARIABLES
         self.temperature = temperature
-        self.swap_interval = swap_interval
+        self.swap_sample = swap_sample
         self.burn_in = burn_in
         # MCMC VARIABLES
         self.num_samples = num_samples
@@ -151,6 +155,7 @@ class Replica(G3PCX, multiprocessing.Process):
 
 
     def run(self):
+        print(f'Entered Run, chain: {self.temperature:.2f}')
         save_knowledge = True
         train_rmse_file = open(os.path.join(self.directory, 'train_rmse_{:.4f}.csv'.format(self.temperature)), 'w')
         test_rmse_file = open(os.path.join(self.directory, 'test_rmse_{:.4f}.csv'.format(self.temperature)), 'w')
@@ -160,6 +165,7 @@ class Replica(G3PCX, multiprocessing.Process):
         weights_initial = np.random.uniform(-5, 5, self.w_size)
 
         # ------------------- initialize MCMC
+        print(f'Initialize MCMC, chain: {self.temperature:.2f}')
         self.start_time = time.time()
 
         train_size = self.train_data.shape[0]
@@ -172,9 +178,12 @@ class Replica(G3PCX, multiprocessing.Process):
         prediction_test = self.neural_network.generate_output(self.test_data, weights_current)
         eta = np.log(np.var(prediction_train - y_train))
         tau_proposal = np.exp(eta)
+
+        print(f'Calculate prior and likelihood')
         prior = self.prior_function(weights_current, tau_proposal)
         [likelihood, rmse_train, acc_train] = self.likelihood_function(self.neural_network, self.train_data, weights_current, tau_proposal, self.temperature)
 
+        print(f'Calculate the rmse')
         rmse_test = Network.calculate_rmse(prediction_test, y_test)
         if self.problem_type == 'classification':
             acc_test = Network.calculate_accuracy(prediction_test, y_test)
@@ -187,8 +196,10 @@ class Replica(G3PCX, multiprocessing.Process):
             acc_test_current = acc_test
             acc_train_current = acc_train
 
+        print(f'Evaluate')
         tempfit = 0
         self.evaluate()
+        # print('\n\nOut of evaluate\n\n')
         tempfit = self.fitness[self.best_index]
         writ = 0
         if save_knowledge:
@@ -199,7 +210,9 @@ class Replica(G3PCX, multiprocessing.Process):
                 test_acc_file.write(str(acc_test_current)+"\n")
                 writ += 1
 
-        # start sampling
+        print(f'Starting sampling, chain:{self.temperature:.2f}')
+        
+        # Start sampling
         for sample in range(1, self.num_samples):
             tempfit = self.best_fit
             self.random_parents()
@@ -216,11 +229,15 @@ class Replica(G3PCX, multiprocessing.Process):
                         test_acc_file.write(str(acc_test_current)+"\n")
                         writ += 1
                 continue
+            # print(f'Temperature: {self.temperature:.2f} Sample: {sample} P1')
             self.find_parents()
             self.sort_population()
             self.replace_parents()
             self.best_index = 0
             tempfit = self.fitness[0]
+
+            # print(f'Temperature: {self.temperature:.2f} Sample: {sample} P2')
+
             for x in range(1, self.population_size):
                 if(self.fitness[x] < tempfit):
                     self.best_index = x
@@ -230,6 +247,10 @@ class Replica(G3PCX, multiprocessing.Process):
             weights_proposal = self.population[self.best_index]
             eta_proposal = eta + np.random.normal(0, self.eta_stepsize, 1)
             tau_proposal = np.exp(eta_proposal)
+            
+
+            # print(f'Temperature: {self.temperature:.2f} Sample: {sample} P3')
+            
             if self.problem_type == 'classification':
                 accept, rmse_train, rmse_test, acc_train, acc_test, likelihood, prior = self.evaluate_proposal(self.neural_network, self.train_data, self.test_data, weights_proposal, tau_proposal, likelihood, prior)
             else:
@@ -254,33 +275,44 @@ class Replica(G3PCX, multiprocessing.Process):
                     test_acc_file.write(str(acc_test_current)+"\n")
                     writ += 1
 
-            #SWAPPING PREP
-            if (sample % self.swap_interval == 0 and sample != 0 ):
+            print(f'Temperature: {self.temperature:.2f} Sample: {sample} Next swap at: {self.swap_sample.value} P4')
+
+            # SWAPPING PREP
+            if (sample == self.swap_sample.value):
                 # print('\nTemperature: {} Swapping weights: {}'.format(self.temperature, weights_current[:2]))
                 param = np.concatenate([weights_current, np.asarray([eta]).reshape(1), np.asarray([likelihood*self.temperature]),np.asarray([self.temperature])])
                 self.parameter_queue.put(param)
+                self.event.clear()
                 self.signal_main.set()
-                self.event.wait()
+                print(f'Temperature: {self.temperature:.2f} Current sample: {sample} out of {self.num_samples} is num with {self.swap_sample.value} as next swap')
+                while True:
+                    result = self.event.wait(timeout=2)
+                    if not result:
+                        time.sleep(0.1)
+                        continue
+                    else:
+                        break
                 # retrieve parameters fom queues if it has been swapped
-                if not self.parameter_queue.empty() :
+                while True:
                     try:
-                        result =  self.parameter_queue.get()
-                        #print(self.temperature, w, 'param after swap')
+                        print(f'Temperature: {self.temperature:.2f} Call get')
+                        result =  self.parameter_queue.get(timeout=2)
                         weights_current = result[0:self.w_size]
                         self.population[self.best_index] = weights_current
                         self.fitness[self.best_index] = self.fitness_function(weights_current)
                         eta = result[self.w_size]
                         likelihood = result[self.w_size+1]/self.temperature
-                        # likelihood = self.likelihood_function(self.neural_network, self.train_data, weights_current, np.exp(eta))
-                        print('Temperature: {} Swapped weights: {}'.format(self.temperature, weights_current[:2]))
-                    except:
-                        print ('error')
-                else:
-                    print("Khali")
-                self.event.clear()
+                        print(f'Temperature: {self.temperature:.2f} Swapped weights: {weights_current[:2]}')
+                        break
+                    except Exception as e:
+                        print(f'Exception occured: {e}')
+                        time.sleep(0.01)
+
+            # print(f'Temperature: {self.temperature:.2f} Sample: {sample} P5')
+
             elapsed_time = ":".join(Replica.convert_time(time.time() - self.start_time))
 
-            print("Temperature: {:.2f} Sample: {:d}, Best Fitness: {:.4f}, Proposal: {:.4f}, Time Elapsed: {:s}".format(self.temperature, sample, rmse_train_current, rmse_train, elapsed_time))
+            # print("Temperature: {} Sample: {:d}, Best Fitness: {:.4f}, Proposal: {:.4f}, Time Elapsed: {:s}".format(self.temperature, sample, rmse_train_current, rmse_train, elapsed_time))
 
         elapsed_time = time.time() - self.start_time
         accept_ratio = num_accept/self.num_samples
@@ -288,7 +320,9 @@ class Replica(G3PCX, multiprocessing.Process):
         # Close the files
         train_rmse_file.close()
         test_rmse_file.close()
-        print("Temperature: {} done, {} samples sampled out of {}".format(self.temperature, sample, self.num_samples))
+        with self.active_chains.get_lock():
+            self.active_chains.value -= 1
+        print(f"Temperature: {self.temperature} done, {sample+1} samples sampled out of {self.num_samples}. Number of active chains: {self.active_chains.value}")
 
 class EvoPT(object):
 
@@ -314,6 +348,8 @@ class EvoPT(object):
         self.geometric = geometric
         self.population_size = opt.population_size
         # create queues for transfer of parameters between process chain
+        self.active_chains = Value('d', lock=True)
+        self.swap_sample = Value('d', lock=True)
         self.parameter_queue = [multiprocessing.Queue() for i in range(self.num_chains)]
         self.chain_queue = multiprocessing.JoinableQueue()
         self.wait_chain = [multiprocessing.Event() for i in range (self.num_chains)]
@@ -422,14 +458,16 @@ class EvoPT(object):
             temp = 2
             for i in range(0,self.num_chains):
                 self.temperatures.append(temp)
-                temp += 2.5 #(self.maxtemp/self.num_chains)
+                temp += (self.max_temp/self.num_chains) #2.5
                 print (self.temperatures[i])
 
     def initialize_chains(self):
         self.assign_temperatures()
         weights = np.random.randn(self.num_param)
+        with self.swap_sample.get_lock():
+            self.swap_sample.value = self.swap_interval
         for chain in range(0, self.num_chains):
-            self.chains.append(Replica(self.num_samples, self.burn_in, self.population_size, self.topology, self.train_data, self.test_data, self.path, self.temperatures[chain], self.swap_interval, self.parameter_queue[chain], self.problem_type, main_process=self.wait_chain[chain], event=self.event[chain]))
+            self.chains.append(Replica(self.num_samples, self.burn_in, self.population_size, self.topology, self.train_data, self.test_data, self.path, self.temperatures[chain], self.swap_sample, self.parameter_queue[chain], self.problem_type, main_process=self.wait_chain[chain], event=self.event[chain], active_chains=self.active_chains))
 
     def swap_procedure(self, parameter_queue_1, parameter_queue_2):
         if not parameter_queue_2.empty() and not parameter_queue_1.empty():
@@ -486,44 +524,46 @@ class EvoPT(object):
 
         for index in range(self.num_chains):
             self.chains[index].start()
+            with self.active_chains.get_lock():
+                self.active_chains.value += 1
 
         swaps_appected_main = 0
         total_swaps_main = 0
 
         #SWAP PROCEDURE
-        while True:
-            count = 0
-            for index in range(self.num_chains):
-                if not self.chains[index].is_alive():
-                    count+=1
-                    print("Temp {} Dead".format(self.chains[index].temperature))
-
-            if count == self.num_chains:
-                break
-            print("Waiting")
-            timeout_count = 0
+        while self.active_chains.value > 0:
+            print("Waiting for Swap Signals...")
+            signal_count = 0
             for index in range(0,self.num_chains):
                 print("Waiting for chain: {}".format(index+1))
-                flag = self.wait_chain[index].wait(timeout=2)
-                if flag:
-                    print("Signal from chain: {}".format(index+1))
-                    timeout_count += 1
+                while True:
+                    flag = self.wait_chain[index].wait(timeout=2)
+                    if flag:
+                        print("Signal from chain: {}".format(index+1))
+                        signal_count += 1
+                        break
+                    elif self.active_chains.value <= 0:
+                        break
 
-            if timeout_count != self.num_chains:
+            with self.swap_sample.get_lock():
+                self.swap_sample.value += self.swap_interval
+
+            if signal_count != self.num_chains:
                 print("Skipping the swap!")
                 continue
-            print("Event occured")
+            # print("Event occured")
             for index in range(0,self.num_chains-1):
-                print('starting swap')
+                # print('starting swap')
                 try:
-                    param_1, param_2, swapped = self.swap_procedure(self.parameter_queue[index],self.parameter_queue[index+1])
+                    param_1, param_2, swapped = self.swap_procedure(self.parameter_queue[index], self.parameter_queue[index+1])
                     self.parameter_queue[index].put(param_1)
                     self.parameter_queue[index+1].put(param_2)
                     if index == 0:
                         if swapped:
                             swaps_appected_main += 1
                         total_swaps_main += 1
-                except:
+                except Exception as e:
+                    print(e)
                     print("Nothing Returned by swap method!")
             for index in range (self.num_chains):
                     self.event[index].set()
@@ -646,7 +686,6 @@ if __name__ == '__main__':
     data_path = os.path.join(opt.root, 'Datasets')
     opt.train_data = np.genfromtxt(os.path.join(data_path, opt.train_data), delimiter=',')
     opt.test_data = np.genfromtxt(os.path.join(data_path, opt.test_data), delimiter=',')
-
 
     # CREATE EVOLUTIONARY PT CLASS
     evo_pt = EvoPT(opt, results_dir)

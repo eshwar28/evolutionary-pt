@@ -24,7 +24,7 @@ ions:
   test_data: 'data_classification/Ions/ftest.csv'
 
 cancer:
-  num_samples: 50000
+  num_samples: 20000
   problem_type: classification
   topology: "8,12,2"
   name: cancer
