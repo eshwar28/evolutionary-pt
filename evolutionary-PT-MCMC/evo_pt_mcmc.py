@@ -500,21 +500,17 @@ class EvoPT(object):
             return
 
     def run_chains(self):
+        start_time = time.time()
         x_test = np.linspace(0,1,num=self.test_data.shape[0])
         x_train = np.linspace(0,1,num=self.train_data.shape[0])
+        
         # only adjacent chains can be swapped therefore, the number of proposals is ONE less num_chains
         swap_proposal = np.ones(self.num_chains-1)
+
         # create parameter holders for paramaters that will be swapped
         replica_param = np.zeros((self.num_chains, self.num_param))
         likelihood = np.zeros(self.num_chains)
         eta = np.zeros(self.num_chains)
-        # Define the starting and ending of MCMC Chains
-        start = 0
-        end = self.num_samples-1
-        #RUN MCMC CHAINS
-        for index in range(self.num_chains):
-            self.chains[index].start_chain = start
-            self.chains[index].end = end
 
         for index in range(self.num_chains):
             self.chains[index].start()
@@ -609,6 +605,18 @@ class EvoPT(object):
         # PLOT THE RESULTS
         self.plot_figures()
 
+        with open(os.path.join(self.path, 'results.txt'), 'w') as results_file:
+            results_file.write(f'NUMBER OF SAMPLES PER CHAIN: {self.num_samples}\n')
+            results_file.write(f'NUMBER OF CHAINS: {self.num_chains}\n')
+            results_file.write(f'NUMBER OF SWAPS MAIN: {total_swaps_main}\n')
+            results_file.write(f'SWAP ACCEPTANC: {self.num_swap*100/self.total_swap_proposals:.4f} %\n')
+            results_file.write(f'SWAP ACCEPTANCE MAIN: {swaps_appected_main*100/total_swaps_main:.2f} %\n')
+            results_file.write(f'ACCURACY: \n\tTRAIN -> MEAN: {self.acc_train.mean():.2f} STD: {self.acc_train.std():.2f}\n\tTEST -> MEAN: {self.acc_test.mean():.2f} STD: {self.acc_test.std():.2f}\n')
+            results_file.write(f'RMSE: \n\tTRAIN -> MEAN: {self.rmse_train.mean():.5f} STD: {self.rmse_train.std():.5f}\n\tTEST -> MEAN: {self.rmse_test.mean():.5f} STD: {self.rmse_test.std():.5f}\n')
+            results_file.write(f'TIME TAKEN: {time.time()-start_time:.2f} secs\n')
+
+            
+        
         print("NUMBER OF SWAPS MAIN =", total_swaps_main)
         print("SWAP ACCEPTANCE = ", self.num_swap*100/self.total_swap_proposals," %")
         print("SWAP ACCEPTANCE MAIN = ", swaps_appected_main*100/total_swaps_main," %")
