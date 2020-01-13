@@ -17,6 +17,7 @@ import math
 import random
 import os, sys
 from pprint import pprint
+import json
 
 from config import opt
 from network import Network
@@ -25,7 +26,7 @@ from g3pcx import G3PCX
 
 class Replica(G3PCX, Process):
     def __init__(self, num_samples, burn_in, population_size, topology, train_data, test_data, directory, temperature, swap_sample, parameter_queue, problem_type,  main_process, event, active_chains, max_limit=(-5), min_limit=5):
-        # MULTIPROCESSING CLASS CONSTRUCTOR
+        # Multiprocessing attributes
         multiprocessing.Process.__init__(self)
         self.process_id = temperature
         self.parameter_queue = parameter_queue
@@ -34,11 +35,11 @@ class Replica(G3PCX, Process):
         self.active_chains = active_chains
         self.event.clear()
         self.signal_main.clear()
-        #PARALLEL TEMPERING VARIABLES
+        # Parallel Tempering attributes
         self.temperature = temperature
         self.swap_sample = swap_sample
         self.burn_in = burn_in
-        # MCMC VARIABLES
+        # MCMC attributes
         self.num_samples = num_samples
         self.topology = topology
         self.train_data = train_data
@@ -153,7 +154,6 @@ class Replica(G3PCX, Process):
         else:
             return accept, rmse_train_proposal, rmse_test_proposal, acc_train, acc_test, likelihood_current, prior_current
 
-
     def run(self):
         print(f'Entered Run, chain: {self.temperature:.2f}')
         save_knowledge = True
@@ -164,7 +164,7 @@ class Replica(G3PCX, Process):
             test_acc_file = open(os.path.join(self.directory, 'test_acc_{:.4f}.csv'.format(self.temperature)), 'w')
         weights_initial = np.random.uniform(-5, 5, self.w_size)
 
-        # ------------------- initialize MCMC
+        # Initialize MCMC
         print(f'Initialize MCMC, chain: {self.temperature:.2f}')
         self.start_time = time.time()
 
@@ -188,7 +188,7 @@ class Replica(G3PCX, Process):
         if self.problem_type == 'classification':
             acc_test = Network.calculate_accuracy(prediction_test, y_test)
 
-        # save values into previous variables
+        # Save values into previous variables
         rmse_train_current = rmse_train
         rmse_test_current = rmse_test
         num_accept = 0
@@ -199,7 +199,6 @@ class Replica(G3PCX, Process):
         print(f'Evaluate')
         tempfit = 0
         self.evaluate()
-        # print('\n\nOut of evaluate\n\n')
         tempfit = self.fitness[self.best_index]
         writ = 0
         if save_knowledge:
@@ -285,28 +284,23 @@ class Replica(G3PCX, Process):
                 self.event.clear()
                 self.signal_main.set()
                 print(f'Temperature: {self.temperature:.2f} Current sample: {sample} out of {self.num_samples} is num with {self.swap_sample.value} as next swap')
-                while True:
-                    result = self.event.wait(timeout=2)
-                    if not result:
-                        time.sleep(0.1)
-                        continue
-                    else:
-                        break
+                
+                # Wait for signal from Master
+                result = self.event.wait()
+
                 # retrieve parameters fom queues if it has been swapped
-                while True:
-                    try:
-                        print(f'Temperature: {self.temperature:.2f} Call get')
-                        result =  self.parameter_queue.get(timeout=2)
-                        weights_current = result[0:self.w_size]
-                        self.population[self.best_index] = weights_current
-                        self.fitness[self.best_index] = self.fitness_function(weights_current)
-                        eta = result[self.w_size]
-                        likelihood = result[self.w_size+1]/self.temperature
-                        print(f'Temperature: {self.temperature:.2f} Swapped weights: {weights_current[:2]}')
-                        break
-                    except Exception as e:
-                        print(f'Exception occured: {e}')
-                        time.sleep(0.01)
+                print(f'Temperature: {self.temperature:.2f} Call get')
+                result = self.parameter_queue.get(timeout=2)
+                while not result.all():
+                    time.sleep(0.01)
+                    result = self.parameter_queue.get(timeout=2)
+                    
+                weights_current = result[0:self.w_size]
+                self.population[self.best_index] = weights_current
+                self.fitness[self.best_index] = self.fitness_function(weights_current)
+                eta = result[self.w_size]
+                likelihood = result[self.w_size+1]/self.temperature
+                print(f'Temperature: {self.temperature:.2f} Swapped weights: {weights_current[:2]}')
 
             # print(f'Temperature: {self.temperature:.2f} Sample: {sample} P5')
 
@@ -678,9 +672,9 @@ if __name__ == '__main__':
     results_dir = os.path.join('Results', '{}_{}'.format(opt.problem, opt.run_id))
     make_directory(results_dir)
 
-    logfile = os.path.join(results_dir, 'log.txt')
+    logfile = os.path.join(results_dir, 'params.json')
     with open(logfile, 'w') as stream:
-        stream.write(str(opt))
+        json.dump(vars(opt), stream)
 
     # READ DATA
     data_path = os.path.join(opt.root, 'Datasets')
