@@ -25,7 +25,7 @@ from g3pcx import G3PCX
 
 
 class Replica(G3PCX, Process):
-    def __init__(self, num_samples, burn_in, population_size, topology, train_data, test_data, directory, temperature, swap_sample, parameter_queue, problem_type,  main_process, event, active_chains, num_accepted, max_limit=(-5), min_limit=5):
+    def __init__(self, num_samples, burn_in, population_size, topology, train_data, test_data, directory, temperature, swap_sample, parameter_queue, problem_type,  main_process, event, active_chains, num_accepted, swap_interval, max_limit=(-5), min_limit=5):
         # Multiprocessing attributes
         multiprocessing.Process.__init__(self)
         self.process_id = temperature
@@ -39,6 +39,7 @@ class Replica(G3PCX, Process):
         # Parallel Tempering attributes
         self.temperature = temperature
         self.swap_sample = swap_sample
+        self.swap_interval = swap_interval
         self.burn_in = burn_in
         # MCMC attributes
         self.num_samples = num_samples
@@ -302,6 +303,9 @@ class Replica(G3PCX, Process):
                 eta = result[self.w_size]
                 likelihood = result[self.w_size+1]/self.temperature
                 print(f'Temperature: {self.temperature:.2f} Swapped weights: {weights_current[:2]}')
+            elif (sample >= self.swap_sample.value):
+                with self.swap_sample.get_lock():
+                    self.swap_sample.value += self.swap_interval
 
             # print(f'Temperature: {self.temperature:.2f} Sample: {sample} P5')
 
@@ -465,7 +469,7 @@ class EvoPT(object):
             self.swap_sample.value = self.swap_interval
         for chain in range(0, self.num_chains):
             weights = np.random.randn(self.num_param)
-            self.chains.append(Replica(self.num_samples, self.burn_in, self.population_size, self.topology, self.train_data, self.test_data, self.path, self.temperatures[chain], self.swap_sample, self.parameter_queue[chain], self.problem_type, main_process=self.wait_chain[chain], event=self.event[chain], active_chains=self.active_chains,  num_accepted=self.num_accepted))
+            self.chains.append(Replica(self.num_samples, self.burn_in, self.population_size, self.topology, self.train_data, self.test_data, self.path, self.temperatures[chain], self.swap_sample, self.parameter_queue[chain], self.problem_type, main_process=self.wait_chain[chain], event=self.event[chain], active_chains=self.active_chains,  num_accepted=self.num_accepted, swap_interval=self.swap_interval))
 
     def swap_procedure(self, parameter_queue_1, parameter_queue_2):
         if not parameter_queue_2.empty() and not parameter_queue_1.empty():
@@ -545,9 +549,8 @@ class EvoPT(object):
             if signal_count != self.num_chains:
                 print("Skipping the swap!")
                 continue
-            # print("Event occured")
+
             for index in range(0,self.num_chains-1):
-                # print('starting swap')
                 try:
                     param_1, param_2, swapped = self.swap_procedure(self.parameter_queue[index], self.parameter_queue[index+1])
                     self.parameter_queue[index].put(param_1)
