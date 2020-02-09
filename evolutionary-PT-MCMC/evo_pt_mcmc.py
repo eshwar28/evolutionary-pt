@@ -25,7 +25,7 @@ from g3pcx import G3PCX
 
 
 class Replica(G3PCX, Process):
-    def __init__(self, num_samples, burn_in, population_size, topology, train_data, test_data, directory, temperature, swap_sample, parameter_queue, problem_type,  main_process, event, active_chains, max_limit=(-5), min_limit=5):
+    def __init__(self, num_samples, burn_in, population_size, topology, train_data, test_data, directory, temperature, swap_sample, parameter_queue, problem_type,  main_process, event, active_chains, num_accepted, max_limit=(-5), min_limit=5):
         # Multiprocessing attributes
         multiprocessing.Process.__init__(self)
         self.process_id = temperature
@@ -33,6 +33,7 @@ class Replica(G3PCX, Process):
         self.signal_main = main_process
         self.event =  event
         self.active_chains = active_chains
+        self.num_accepted = num_accepted
         self.event.clear()
         self.signal_main.clear()
         # Parallel Tempering attributes
@@ -316,6 +317,8 @@ class Replica(G3PCX, Process):
         test_rmse_file.close()
         with self.active_chains.get_lock():
             self.active_chains.value -= 1
+        with self.num_accepted.get_lock():
+            self.num_accepted.value += num_accept
         print(f"Temperature: {self.temperature} done, {sample+1} samples sampled out of {self.num_samples}. Number of active chains: {self.active_chains.value}")
 
 class EvoPT(object):
@@ -344,6 +347,7 @@ class EvoPT(object):
         # create queues for transfer of parameters between process chain
         self.active_chains = Value('d', lock=True)
         self.swap_sample = Value('d', lock=True)
+        self.num_accepted = Value('d', lock=True)
         self.parameter_queue = [multiprocessing.Queue() for i in range(self.num_chains)]
         self.chain_queue = multiprocessing.JoinableQueue()
         self.wait_chain = [multiprocessing.Event() for i in range (self.num_chains)]
@@ -457,11 +461,11 @@ class EvoPT(object):
 
     def initialize_chains(self):
         self.assign_temperatures()
-        weights = np.random.randn(self.num_param)
         with self.swap_sample.get_lock():
             self.swap_sample.value = self.swap_interval
         for chain in range(0, self.num_chains):
-            self.chains.append(Replica(self.num_samples, self.burn_in, self.population_size, self.topology, self.train_data, self.test_data, self.path, self.temperatures[chain], self.swap_sample, self.parameter_queue[chain], self.problem_type, main_process=self.wait_chain[chain], event=self.event[chain], active_chains=self.active_chains))
+            weights = np.random.randn(self.num_param)
+            self.chains.append(Replica(self.num_samples, self.burn_in, self.population_size, self.topology, self.train_data, self.test_data, self.path, self.temperatures[chain], self.swap_sample, self.parameter_queue[chain], self.problem_type, main_process=self.wait_chain[chain], event=self.event[chain], active_chains=self.active_chains,  num_accepted=self.num_accepted))
 
     def swap_procedure(self, parameter_queue_1, parameter_queue_2):
         if not parameter_queue_2.empty() and not parameter_queue_1.empty():
@@ -609,10 +613,11 @@ class EvoPT(object):
             results_file.write(f'NUMBER OF SAMPLES PER CHAIN: {self.num_samples}\n')
             results_file.write(f'NUMBER OF CHAINS: {self.num_chains}\n')
             results_file.write(f'NUMBER OF SWAPS MAIN: {total_swaps_main}\n')
-            results_file.write(f'SWAP ACCEPTANC: {self.num_swap*100/self.total_swap_proposals:.4f} %\n')
+            results_file.write(f'PERCENT SAMPLES ACCEPTED: {self.num_accepted.value/(self.num_samples*self.num_chains)*100:.2f}\n')
+            results_file.write(f'SWAP ACCEPTANCE: {self.num_swap*100/self.total_swap_proposals:.4f} %\n')
             results_file.write(f'SWAP ACCEPTANCE MAIN: {swaps_appected_main*100/total_swaps_main:.2f} %\n')
             if self.problem_type == 'classification':
-                results_file.write(f'ACCURACY: \n\tTRAIN -> MEAN: {self.acc_train.mean():.2f} STD: {self.acc_train.std():.2f}\n\tTEST -> MEAN: {self.acc_test.mean():.2f} STD: {self.acc_test.std():.2f}\n')
+                results_file.write(f'ACCURACY: \n\tTRAIN -> MEAN: {self.acc_train.mean():.2f} STD: {self.acc_train.std():.2f} BEST: {self.acc_train.max():.2f} \n\tTEST -> MEAN: {self.acc_test.mean():.2f} STD: {self.acc_test.std():.2f} BEST: {self.acc_test.max():.2f}\n')
             results_file.write(f'RMSE: \n\tTRAIN -> MEAN: {self.rmse_train.mean():.5f} STD: {self.rmse_train.std():.5f}\n\tTEST -> MEAN: {self.rmse_test.mean():.5f} STD: {self.rmse_test.std():.5f}\n')
             results_file.write(f'TIME TAKEN: {time.time()-start_time:.2f} secs\n')
 
@@ -694,6 +699,7 @@ if __name__ == '__main__':
     evo_pt = EvoPT(opt, results_dir)
     
     # INITIALIZE PT CHAINS
+    np.random.seed(int(time.time()))
     evo_pt.initialize_chains()
 
     # RUN EVO PT

@@ -16,7 +16,7 @@ iris:
   test_data: 'data_classification/Iris/iris-test.csv'
 
 ions:
-  num_samples: 35000
+  num_samples: 60000
   problem_type: classification
   topology: "35,50,2"
   name: ionosphere
@@ -24,7 +24,7 @@ ions:
   test_data: 'data_classification/Ions/ftest.csv'
 
 cancer:
-  num_samples: 20000
+  num_samples: 60000
   problem_type: classification
   topology: "8,12,2"
   name: cancer
@@ -40,7 +40,7 @@ TicTacToe:
   test_data: 'data_classification/TicTacToe/ftest.csv'
 
 bank:
-  num_samples: 55000
+  num_samples: 50000
   problem_type: classification
   topology: "51,90,2"
   name: bank
@@ -48,7 +48,7 @@ bank:
   test_data: 'data_classification/Bank/test.csv'
 
 penDigit:
-  num_samples: 45000
+  num_samples: 50000
   problem_type: classification
   topology: "16,30,10"
   name: penDigit
