@@ -2,7 +2,7 @@
 synthetic:
   num_samples: 40000
   problem_type: regression
-  topology: "4,25,1"
+  topology: "4,2,1"
   name: synthetic
   train_data: 'synthetic_data/target_train.csv'
   test_data: 'synthetic_data/target_test.csv'
