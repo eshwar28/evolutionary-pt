@@ -1,9 +1,8 @@
-import matplotlib.pyplot as plt
 import numpy as np
 import random
 import time
 import math
-import random
+import pandas as pd
 import os
 from pso import PSO, Particle
 
@@ -111,8 +110,8 @@ class Network(object):
         return self.calculate_rmse(fx, y)
 
 
-class MCMC(PSO,Particle):
-    def __init__(self, num_samples, population_size, topology, train_data, test_data, directory, problem_type='regression', max_limit=(-5), min_limit=5):
+class MCMC(PSO, Particle):
+    def __init__(self, num_samples, population_size, topology, train_data, test_data, directory, problem_type='regression', max_limit=(10), min_limit=-10):
         self.num_samples = num_samples
         self.pop_size=population_size
         self.topology = topology
@@ -127,6 +126,7 @@ class MCMC(PSO,Particle):
         self.initialize_sampling_parameters()
         self.create_directory(directory)
         PSO.__init__(self, self.pop_size, self.w_size, self.max_limits, self.min_limits,self.neural_network.evaluate_fitness)
+        
 
 
     def fitness_function(self, x):
@@ -134,7 +134,8 @@ class MCMC(PSO,Particle):
         return fitness
 
     def initialize_sampling_parameters(self):
-        self.eta_stepsize = 0.02
+        self.eta_stepsize = 0.005
+        self.wpos_stepsize=0.005
         self.sigma_squared = 25
         self.nu_1 = 0
         self.nu_2 = 0
@@ -185,7 +186,7 @@ class MCMC(PSO,Particle):
 
     @staticmethod
     def classification_prior(sigma_squared, weights):
-        part_1 = -1 * ((weights.shape[0]) / 2) * np.log(sigma_squared)
+        part_1 = -1 * ((weights.shape[0]) / 2) * np.log(2*np.p1*sigma_squared)
         part_2 = 1 / (2 * sigma_squared) * (sum(np.square(weights)))
         log_loss = part_1 - part_2
         return log_loss
@@ -226,16 +227,20 @@ class MCMC(PSO,Particle):
         prior_proposal = self.prior_function(weights_proposal, tau_proposal)
         difference_likelihood = likelihood_proposal - likelihood_current
         difference_prior = prior_proposal - prior_current
-        mh_ratio = min(1, np.exp(min(709, difference_likelihood + difference_prior)))
-        u = np.random.uniform(0,1)
-        if u < mh_ratio:
+        mh_sum = difference_likelihood+difference_prior
+        u = np.log(np.random.uniform(0,1))
+        print(likelihood_proposal,prior_proposal)
+        print(likelihood_current,prior_current)
+        if u < mh_ratio :
             accept = True
             likelihood_current = likelihood_proposal
-            prior_proposal = prior_current
+            prior_current = prior_proposal 
         return accept, rmse_train_proposal, rmse_test_proposal, likelihood_current, prior_current
 
+    
 
-    def mcmc_sampler(self, save_knowledge=True):
+
+    def mcmc_sampler(self, save_knowledge=True):           
         train_rmse_file = open(self.directory+'/train_rmse.csv', 'w')
         test_rmse_file = open(self.directory+'/test_rmse.csv', 'w')
         weights_initial = np.random.uniform(-5, 5, self.w_size)
@@ -255,6 +260,7 @@ class MCMC(PSO,Particle):
         tau_proposal = np.exp(eta)
         prior = self.prior_function(weights_current, tau_proposal)
         [likelihood, rmse_train] = self.likelihood_function(self.neural_network, self.train_data, weights_current, tau_proposal)
+        
         rmse_test = self.calculate_rmse(prediction_test, y_test)
 
         # save values into previous variables
@@ -262,9 +268,10 @@ class MCMC(PSO,Particle):
         rmse_test_current = rmse_test
         num_accept = 0
 
+        
         for sample in range(self.num_samples):
             self.swarm, self.best_swarm_pos, self.best_swarm_err=self.evolve(self.swarm, self.best_swarm_pos, self.best_swarm_err)
-            weights_proposal = self.best_swarm_pos
+            weights_proposal = self.best_swarm_pos+np.random.normal(0, self.wpos_stepsize, self.w_size)
             eta_proposal = eta + np.random.normal(0, self.eta_stepsize, 1)
             tau_proposal = np.exp(eta_proposal)
             accept, rmse_train, rmse_test, likelihood, prior = self.evaluate_proposal(self.neural_network, self.train_data, self.test_data, weights_proposal, tau_proposal, likelihood, prior)
@@ -272,25 +279,141 @@ class MCMC(PSO,Particle):
             if accept:
                 num_accept += 1
                 weights_current = weights_proposal
+                self.best_swarm_pos=weights_current
+                self.best_part_err=rmse_train
                 eta = eta_proposal
                 # save values into previous variables
                 rmse_train_current = rmse_train
                 rmse_test_current = rmse_test
                 
 
+            
+
             if save_knowledge:
                 np.savetxt(train_rmse_file, [rmse_train_current])
                 np.savetxt(test_rmse_file, [rmse_test_current])
 
             elapsed_time = ":".join(MCMC.convert_time(time.time() - self.start))
-
+            #df_train=pd.read_csv()
 
             
             
             
-            print("Sample: {}, Best Fitness Train: {}, Best Fitness Test: {},Proposal: {}, Time Elapsed: {}".format(sample, rmse_train_current,rmse_test_current,rmse_train, elapsed_time))
+            print("Sample: {}, Best Fitness Train: {}, Best Fitness Test: {},Proposal: {}, Time Elapsed: {},accept ratio: {}".format(sample, rmse_train_current,rmse_test_current,rmse_train, elapsed_time,num_accept/(sample+1)))
+        burnin=0.1*(self.num_samples)
+        #avg_rmse_train=np.mean(rmse_train[])
+        #std_rmse_train=np.std(rmse_train)
+
+        #print("Average RMSE train: {}, Train RMSE SD: {}, Train best: {}".format())
+        elapsed_time = time.time() - self.start
+        accept_ratio = num_accept/num_samples
+
+        # Close the files
+        train_rmse_file.close()
+        test_rmse_file.close()
+
+        return accept_ratio
+    def mcmc_sampler_conventional(self, save_knowledge=True):           
+        train_rmse_file = open(self.directory+'/train_rmse.csv', 'w')
+        test_rmse_file = open(self.directory+'/test_rmse.csv', 'w')
+        weights_initial = np.random.uniform(-5, 5, self.w_size)
+
+        # ------------------- initialize MCMC-------------------------
+        self.start_time = time.time()
+
+        train_size = self.train_data.shape[0]
+        test_size = self.test_data.shape[0]
+        y_test = self.test_data[:, self.topology[0]: self.topology[0] + self.topology[2]]
+        y_train = self.train_data[:, self.topology[0]: self.topology[0] + self.topology[2]]
+        weights_current = weights_initial.copy()
+        weights_proposal = weights_initial.copy()
+        prediction_train = self.neural_network.generate_output(self.train_data, weights_current)
+        prediction_test = self.neural_network.generate_output(self.test_data, weights_current)
+        eta = np.log(np.var(prediction_train - y_train))
+        tau_proposal = np.exp(eta)
+        prior = self.prior_function(weights_current, tau_proposal)
+        [likelihood, rmse_train] = self.likelihood_function(self.neural_network, self.train_data, weights_current, tau_proposal)
+        
+        rmse_test = self.calculate_rmse(prediction_test, y_test)
+
+        # save values into previous variables
+        rmse_train_current = rmse_train
+        rmse_test_current = rmse_test
+        num_accept = 0
+        sample=0
+        
+        while(sample<self.num_samples):
+            self.swarm, self.best_swarm_pos, self.best_swarm_err=self.evolve(self.swarm, self.best_swarm_pos, self.best_swarm_err)
+            weights_proposal = self.best_swarm_pos+np.random.normal(0, self.wpos_stepsize, self.w_size)
+            eta_proposal = eta + np.random.normal(0, self.eta_stepsize, 1)
+            tau_proposal = np.exp(eta_proposal)
+            accept, rmse_train, rmse_test, likelihood, prior = self.evaluate_proposal(self.neural_network, self.train_data, self.test_data, weights_proposal, tau_proposal, likelihood, prior)
+            
+            if accept:
+                num_accept += 1
+                weights_current = weights_proposal
+                self.best_swarm_pos=weights_current
+                self.best_part_err=rmse_train
+                eta = eta_proposal
+                # save values into previous variables
+                rmse_train_current = rmse_train
+                rmse_test_current = rmse_test
+                
+
+            
+
+            if save_knowledge:
+                np.savetxt(train_rmse_file, [rmse_train_current])
+                np.savetxt(test_rmse_file, [rmse_test_current])
+
+            elapsed_time = ":".join(MCMC.convert_time(time.time() - self.start))
+            #df_train=pd.read_csv()
+
+            
+
+            
+            
+            print("Sample: {}, Best Fitness Train: {}, Best Fitness Test: {},Proposal: {}, Time Elapsed: {},accept ratio: {}".format(sample, rmse_train_current,rmse_test_current,rmse_train, elapsed_time,num_accept/(sample+1)))
+            sample=sample+1
+            for particle in range(self.pop_size):
+                weights_proposal = self.swarm[particle].position+np.random.normal(0, self.wpos_stepsize, self.w_size)
+                eta_proposal = eta + np.random.normal(0, self.eta_stepsize, 1)
+                tau_proposal = np.exp(eta_proposal)
+                accept, rmse_train, rmse_test, likelihood, prior = self.evaluate_proposal(self.neural_network, self.train_data, self.test_data, weights_proposal, tau_proposal, likelihood, prior)
+            
+                if accept:
+                    num_accept += 1
+                    weights_current = weights_proposal
+                    self.swarm[particle].position=weights_current
+                    #self.best_part_err=rmse_train
+                    eta = eta_proposal
+                    # save values into previous variables
+                    rmse_train_current = rmse_train
+                    rmse_test_current = rmse_test
+                    
+
+            
+
+                if save_knowledge:
+                    np.savetxt(train_rmse_file, [rmse_train_current])
+                    np.savetxt(test_rmse_file, [rmse_test_current])
+
+                elapsed_time = ":".join(MCMC.convert_time(time.time() - self.start))
+                #df_train=pd.read_csv()
+
+                
+
+                
+                
+                print("Sample: {}, Best Fitness Train: {}, Best Fitness Test: {},Proposal: {}, Time Elapsed: {},accept ratio: {}".format(sample, rmse_train_current,rmse_test_current,rmse_train, elapsed_time,num_accept/(sample+1)))
+                sample+=1
 
 
+        burnin=0.1*(self.num_samples)
+        #avg_rmse_train=np.mean(rmse_train[])
+        #std_rmse_train=np.std(rmse_train)
+
+        #print("Average RMSE train: {}, Train RMSE SD: {}, Train best: {}".format())
         elapsed_time = time.time() - self.start
         accept_ratio = num_accept/num_samples
 
@@ -301,26 +424,18 @@ class MCMC(PSO,Particle):
         return accept_ratio
 
 if __name__ == '__main__':
-    num_samples = 10000
-    population_size = 100
+    num_samples = 50000
+    population_size = 50
     problem_type = 'regression'
-    topology = [4, 25, 1]
-    problem_name = 'synthetic'
-
-    train_data_file = 'synthetic_data/target_train.csv'
-    test_data_file = 'synthetic_data/target_test.csv'
-
-    train_data = np.genfromtxt(train_data_file, delimiter=',')
-    test_data = np.genfromtxt(test_data_file, delimiter=',')
-
+    topology = [4, 5, 1]
+    time_series_data=os.listdir("data_timeseries")
+    for dataset in time_series_data:
+    problem_name='LazerResults'
+    dataset='Lazer' 
+    train_data_file = 'data_timeseries/' + dataset+ '/train.txt'
+    test_data_file = 'data_timeseries/' + dataset+ '/test.txt'
+    train_data = np.genfromtxt(train_data_file, delimiter=' ',dtype=None)
+    test_data = np.genfromtxt(test_data_file, delimiter=' ',dtype=None)
     model = MCMC(num_samples, population_size, topology, train_data, test_data, directory=problem_name)
     accept_ratio = model.mcmc_sampler()
     print("accept ratio: {}".format(accept_ratio))
-
-
-
-
-
-
-
-
